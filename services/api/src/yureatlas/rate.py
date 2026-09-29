@@ -13,7 +13,7 @@ class HistoricalRate:
     algorithm: str = "historical_rate"
 
     @classmethod
-    def fit(cls, events, grid, start: float, end: float, target: float, sigma=1.4, shrinkage=.05):
+    def fit(cls, events, grid, start: float, end: float, target: float, sigma=1.4, shrinkage=0.05):
         if end <= start:
             raise ValueError("Positive training duration required")
         eligible = (events["t"] >= start) & (events["t"] < end) & (events["m"] >= target)
@@ -24,16 +24,22 @@ class HistoricalRate:
         smoothed = gaussian_filter(counts.reshape(-1, width), sigma=sigma, mode="constant").ravel()
         # Boundary loss is renormalized; shrinkage shares positive mass with every
         # retained cell, proportional to its actual (clipped) area.
-        smoothed *= counts.sum()/max(smoothed.sum(), 1e-12)
-        rates = ((1-shrinkage)*smoothed + shrinkage*counts.sum()*grid.areas/grid.areas.sum())/(end-start)
-        return cls(rates, sigma, shrinkage, end-start)
+        smoothed *= counts.sum() / max(smoothed.sum(), 1e-12)
+        rates = ((1 - shrinkage) * smoothed + shrinkage * counts.sum() * grid.areas / grid.areas.sum()) / (
+            end - start
+        )
+        return cls(rates, sigma, shrinkage, end - start)
 
     def predict(self, hours=24):
-        return -np.expm1(-self.rates*hours/24)
+        return -np.expm1(-self.rates * hours / 24)
 
     @property
     def diagnostics(self):
-        return {"assumption": "Poisson occurrence probability 1-exp(-lambda)",
-                "smoothing": "Gaussian on EPSG:6933 grid; retained-domain renormalization",
-                "sigma_cells": self.sigma_cells, "shrinkage": self.shrinkage,
-                "training_days": self.training_days, "regional_daily_rate": float(self.rates.sum())}
+        return {
+            "assumption": "Poisson occurrence probability 1-exp(-lambda)",
+            "smoothing": "Gaussian on EPSG:6933 grid; retained-domain renormalization",
+            "sigma_cells": self.sigma_cells,
+            "shrinkage": self.shrinkage,
+            "training_days": self.training_days,
+            "regional_daily_rate": float(self.rates.sum()),
+        }

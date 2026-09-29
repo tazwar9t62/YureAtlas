@@ -5,7 +5,7 @@ COMPOSE ?= docker compose
 .PHONY: setup up down native-setup migrate api worker web test contract
 setup:
 	@python3 scripts/setup.py
-	$(COMPOSE) build
+	CODE_VERSION=$$(git rev-parse HEAD) $(COMPOSE) build
 up:
 	$(COMPOSE) up -d db
 	$(COMPOSE) run --rm api alembic upgrade head
@@ -25,8 +25,17 @@ worker:
 web:
 	cd apps/web && pnpm dev
 test:
-	$(UV) run pytest
+	$(UV) run python scripts/test_backend.py
 	cd apps/web && pnpm typecheck
+	cd apps/web && pnpm test:e2e
 contract:
 	$(UV) run python scripts/export_openapi.py
 	cd apps/web && pnpm generate
+
+.PHONY: demo bootstrap-real ingest train forecast evaluate backtest backup restore
+demo bootstrap-real ingest train forecast evaluate backtest:
+	$(COMPOSE) exec -T api python -m yureatlas.cli $@ $(ARGS) --wait
+backup:
+	python3 scripts/backup.py backup
+restore:
+	python3 scripts/backup.py restore "$(BACKUP)"

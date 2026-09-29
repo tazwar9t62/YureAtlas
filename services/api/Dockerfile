@@ -3,9 +3,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1 UV_COMPILE_BYTECODE=1 PATH="/ap
 WORKDIR /app
 RUN pip install --no-cache-dir uv==0.10.9
 COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 COPY services/api services/api
 COPY alembic.ini ./
 RUN uv sync --frozen --no-dev
-RUN useradd -m -u 10001 researcher && mkdir -p /data/artifacts && chown -R researcher /data /app
+RUN useradd -m -u 10001 researcher && mkdir -p /data/artifacts && chown -R researcher /data
+ARG CODE_VERSION=unavailable
+ENV CODE_VERSION=$CODE_VERSION
 USER researcher
 CMD ["uvicorn", "yureatlas.api:app", "--host", "0.0.0.0", "--port", "8000"]

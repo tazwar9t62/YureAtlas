@@ -1,4 +1,5 @@
 """Initial relational archive; frozen SQL, never imported from evolving models."""
+
 from pathlib import Path
 
 from alembic import op
@@ -14,15 +15,31 @@ def upgrade():
         BEGIN RAISE EXCEPTION 'Archive rows are immutable; create a new version'; END;
         $$ LANGUAGE plpgsql;
     """)
-    for table in ("grid_versions", "grid_cells", "experiment_versions", "earthquake_events",
-                  "earthquake_revisions", "catalogue_snapshots", "feature_sets", "model_versions",
-                  "forecast_runs", "forecast_cells", "evaluation_runs", "evaluation_cells", "model_promotions"):
-        op.execute(f"CREATE TRIGGER immutable_archive BEFORE UPDATE OR DELETE ON {table} "
-                   "FOR EACH ROW EXECUTE FUNCTION reject_archive_mutation()")
+    for table in (
+        "grid_versions",
+        "grid_cells",
+        "experiment_versions",
+        "earthquake_events",
+        "earthquake_revisions",
+        "catalogue_snapshots",
+        "feature_sets",
+        "model_versions",
+        "forecast_runs",
+        "forecast_cells",
+        "evaluation_runs",
+        "evaluation_cells",
+        "model_promotions",
+    ):
+        op.execute(
+            f"CREATE TRIGGER immutable_archive BEFORE UPDATE OR DELETE ON {table} "
+            "FOR EACH ROW EXECUTE FUNCTION reject_archive_mutation()"
+        )
     # App inserts all children before the run, using a deferred foreign key. Once
     # the parent exists, no further child rows may be inserted by later transactions.
-    for child, parent, fk in (("forecast_cells", "forecast_runs", "forecast_id"),
-                              ("evaluation_cells", "evaluation_runs", "evaluation_id")):
+    for child, parent, fk in (
+        ("forecast_cells", "forecast_runs", "forecast_id"),
+        ("evaluation_cells", "evaluation_runs", "evaluation_id"),
+    ):
         op.execute(f"ALTER TABLE {child} ALTER CONSTRAINT {child}_{fk}_fkey DEFERRABLE INITIALLY DEFERRED")
         op.execute(f"""CREATE FUNCTION seal_{child}() RETURNS trigger AS $$
         BEGIN

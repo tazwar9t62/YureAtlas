@@ -17,6 +17,7 @@ def dispatch(kind, payload, progress):
     if kind == "ping":
         return {"message": "Worker is ready"}
     from .tasks import execute
+
     return execute(kind, payload, progress)
 
 
@@ -30,6 +31,15 @@ def run_once() -> bool:
         while not stop.wait(15):
             try:
                 checkpoint(job.id)
+                with transaction() as s:
+                    s.execute(
+                        insert(WorkerState)
+                        .values(id="scheduler", heartbeat=now(), details={"active_job": job.id})
+                        .on_conflict_do_update(
+                            index_elements=[WorkerState.id],
+                            set_={"heartbeat": now(), "details": {"active_job": job.id}},
+                        )
+                    )
             except Cancelled:
                 return
             except Exception:
@@ -44,7 +54,10 @@ def run_once() -> bool:
             finish(job.id, "cancelled", error=str(exc))
         except Exception as exc:
             log.exception("Job %s failed", job.id)
-            finish(job.id, "failed", error=str(exc)[:4000])
+            missed = (
+                job.kind == "forecast" and job.payload.get("scheduled") and "deadline" in str(exc).lower()
+            )
+            finish(job.id, "missed" if missed else "failed", error=str(exc)[:4000])
         finally:
             stop.set()
     return True
@@ -56,10 +69,16 @@ def main():
     with engine.connect() as lock:
         if not lock.scalar(text("SELECT pg_try_advisory_lock(8247711)")):
             raise RuntimeError("A YureAtlas worker is already running")
+        from .scheduling import start_scheduler
+
+        start_scheduler()
         while True:
             with transaction() as s:
-                s.execute(insert(WorkerState).values(id="scheduler", heartbeat=now(), details={})
-                          .on_conflict_do_update(index_elements=[WorkerState.id], set_={"heartbeat": now()}))
+                s.execute(
+                    insert(WorkerState)
+                    .values(id="scheduler", heartbeat=now(), details={})
+                    .on_conflict_do_update(index_elements=[WorkerState.id], set_={"heartbeat": now()})
+                )
             if not run_once():
                 time.sleep(1)
 

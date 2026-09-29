@@ -1,4 +1,5 @@
 """Enforce exact experiment-domain membership at atomic publication."""
+
 from alembic import op
 
 revision = "002"

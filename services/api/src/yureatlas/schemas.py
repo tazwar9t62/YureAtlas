@@ -15,8 +15,8 @@ class ExperimentSpec(BaseModel):
     south: float = Field(default=20, ge=15, le=55)
     north: float = Field(default=48, ge=15, le=55)
     size_m: int = Field(default=50000, ge=50000, le=200000)
-    yellow: float = Field(default=.01, gt=0, lt=1)
-    red: float = Field(default=.05, gt=0, lt=1)
+    yellow: float = Field(default=0.01, gt=0, lt=1)
+    red: float = Field(default=0.05, gt=0, lt=1)
     duration_hours: Literal[24] = 24
     magnitude_policy: str = "provider_preferred"
     cutoff_minutes_before_start: Literal[30] = 30
@@ -29,8 +29,11 @@ class ExperimentSpec(BaseModel):
             raise ValueError("Invalid study envelope")
         if self.input_magnitude > self.target_magnitude or self.yellow >= self.red:
             raise ValueError("Thresholds must be ordered")
-        self.magnitude_policy = {"usgs": "USGS preferred (mixed types)", "jma": "JMA J/D/d/V/v selected",
-                                 "synthetic": "artificial magnitude"}[self.provider]
+        self.magnitude_policy = {
+            "usgs": "USGS preferred (mixed types)",
+            "jma": "JMA J/D/d/V/v selected",
+            "synthetic": "artificial magnitude",
+        }[self.provider]
         return self
 
 
@@ -59,7 +62,7 @@ class JobRequest(BaseModel):
 
     @model_validator(mode="after")
     def bounded(self):
-        if self.start and self.end and not 0 < (self.end-self.start).total_seconds() <= 366*86400*30:
+        if self.start and self.end and not 0 < (self.end - self.start).total_seconds() <= 366 * 86400 * 30:
             raise ValueError("Expected an ordered interval of at most 30 years")
         return self
 

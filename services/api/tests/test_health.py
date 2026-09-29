@@ -1,5 +1,4 @@
 from fastapi.testclient import TestClient
-
 from yureatlas.api import app
 
 

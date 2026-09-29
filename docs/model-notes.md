@@ -1,0 +1,29 @@
+# Implemented models and limits
+
+## Historical-rate baseline
+
+Counts from eligible fitting history are smoothed by a Gaussian filter on the fixed equal-area grid. Mass lost at the retained boundary is renormalized; a small area-proportional regional component assigns positive rates to unobserved cells. Tuning considers sigma 0.6, 1.4, 2.5 cells and shrinkage 0.02, 0.1 using the chronological tuning block. The mean target-event count is converted to occurrence probability with `1-exp(-lambda)`, explicitly assuming Poisson counts. This is a reference model, not a claim that actual earthquakes are independent.
+
+## Histogram gradient boosting
+
+CPU scikit-learn HistGradientBoostingClassifier, 60 iterations, 15 leaves, depth ≤4, learning rate 0.08, 50 minimum leaf samples, 63 bins, L2 2, seed 2026, two compute threads. Built-in random early stopping is disabled. Inputs: preceding 1/7/30/90-day counts; target-magnitude counts for 7/30 days; time since cell activity; 30-day max magnitude; mean known depth and missing indicator; smoothed neighbouring counts; haversine distance in km to recent active cell centroids; expanding earlier background rate; recent activity/background ratio. Missing numerical data remain NaN for the model's native missing-value handling. Centroid distances reflect grid resolution, not precise epicentral distances.
+
+At least 20 positives and both classes are required in each fit/tune/calibration partition. Sigmoid calibration fits logistic regression on logit raw probabilities in the independent calibration block. Feature importance is not presented as physical causation. Whole matrices are bounded to four million cell-days, while inspectable feature artifacts are written in weekly Parquet batches. This is a laptop research limit, not an unbounded data lake.
+
+## Calibrated hybrid
+
+A convex blend combines the saved historical rate and the saved classifier's raw probabilities. ML weight is chosen from 0, .05, …, 1 on tuning Brier loss. A distinct sigmoid calibrator is then fitted on the calibration block. Saved model membership and weights are explicit. **ETAS is not included** in this v1 hybrid. The hybrid is not presumed better and cannot automatically displace the baseline; promotion is explicit and audited.
+
+## ETAS discrete-space research implementation
+
+The implementation follows the marked branching-process structure described by [Ogata (1998)](https://www.ism.ac.jp/editsec/aism/pdf/050_2_0379.pdf) and the [ETAS package's mathematical documentation](https://search.r-project.org/CRAN/refmans/ETAS/html/etas.html). It is original Python code, not a wrapper claiming an invented third-party ETAS API. It uses a **declared discrete-space approximation** with continuous time and actual multi-generation simulation. Independent scientific/benchmark validation remains pending.
+
+Conditional intensity at cell j and time t is `mu*u[j] + sum(k(m_i)*g(t-t_i)*S[i,j])`. Background `u` is specified proportional to actual cell area. `g` is normalized modified Omori: `(p-1)/c * (1+t/c)^(-p)`. Magnitude excess follows an exponential density with fitted beta. Productivity is `n*(beta-alpha)/beta * exp(alpha*(m-m0))`, making the unconditional offspring mean n. The fitted bounds enforce `0.001≤n≤0.85`, `0.01≤alpha/beta≤0.8`, `0.005≤c≤1` day, `1.05≤p≤2.5`, and `25≤sigma≤250` km. Mu is fitted positive. Gaussian spatial weights use cell-centroid haversine distances and actual areas, then normalize over the retained domain; magnitude-dependent spatial scale is fixed (gamma=0).
+
+L-BFGS-B maximizes the conditional point-process likelihood `sum(log(intensity)) - integrated intensity`, with the analytically integrated Omori contribution. Fit uses the final 90 days of the fitting block, not tuning/calibration/test labels, and requires 40–1,800 events above the target threshold. Empty initial history, homogeneous spatial background, finite-domain renormalization, no outside triggering, discretized locations, fixed gamma, assumed magnitude law, and a 90-day parent-history truncation are material limitations. Context buffering is recorded as zero; this is not a continuous unbounded regional ETAS model. Nonconvergence and resource caps produce unavailable results, not fallback “ETAS” numbers.
+
+Prediction simulates background immigrants, offspring from observed prior events, and all successive generations during the 30-minute unknown gap plus forecast day. Magnitudes and normalized spatial destinations are sampled. Cell probability comes from simulated hit frequency, **not a Poisson transform of an ETAS expected count**. There are 512 simulations with seed 2026; Jeffreys smoothing `(hits+.5)/(N+1)` is recorded. Its floor is about 0.0975%, so very rare-cell predictions have limited Monte Carlo resolution. Maximum binomial standard error is about 2.21 percentage points. The simulator aborts instead of publishing partial output if a simulation exceeds 20,000 generated/parent events. Tests verify normalized kernels, expected subcritical productivity, spatial mass conservation, and the zero-triggering Poisson limit. They do not establish real-world superiority.
+
+## Reproducibility
+
+Artifacts are local joblib files referenced only by immutable database rows, protected by SHA-256 verification; arbitrary uploaded models cannot be loaded. Feature schemas, partitions, data revision snapshots, optimizer diagnostics, seeds, components, and dependency-manifest references are archived. Dependency upgrades or feature/model recipe changes require a new version and renewed validation. Pinning library versions aids software reproducibility but does not remove floating-point differences across CPU architectures.

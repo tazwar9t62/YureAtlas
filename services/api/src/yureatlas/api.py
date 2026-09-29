@@ -1,4 +1,5 @@
 from datetime import timedelta
+from itertools import pairwise
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
@@ -6,11 +7,18 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, text
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
-from .config import settings
-from .db import engine
-from .db import transaction
 from . import tables as t
-from .schemas import EvaluationView, ExperimentSpec, ExperimentView, ForecastView, JobRequest, JobView, ModelView
+from .config import settings
+from .db import engine, transaction
+from .schemas import (
+    EvaluationView,
+    ExperimentSpec,
+    ExperimentView,
+    ForecastView,
+    JobRequest,
+    JobView,
+    ModelView,
+)
 
 app = FastAPI(title="YureAtlas", version="0.1.0")
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["localhost", "127.0.0.1", "api", "testserver"])
@@ -62,30 +70,48 @@ def view(row, schema):
 @app.get("/experiments", response_model=list[ExperimentView])
 def experiments():
     with transaction() as s:
-        return [view(e, ExperimentView) for e in s.scalars(select(t.Experiment).order_by(t.Experiment.created_at))]
+        return [
+            view(e, ExperimentView) for e in s.scalars(select(t.Experiment).order_by(t.Experiment.created_at))
+        ]
 
 
 @app.post("/experiments", response_model=ExperimentView, status_code=201)
 def create_experiment(spec: ExperimentSpec):
     from .catalogue import ensure_experiment
+
     return view(ensure_experiment(spec), ExperimentView)
 
 
 @app.get("/models", response_model=list[ModelView])
 def models(experiment_id: str):
     with transaction() as s:
-        return [view(m, ModelView) for m in s.scalars(select(t.Model).where(t.Model.experiment_id == experiment_id).order_by(t.Model.created_at.desc()))]
+        return [
+            view(m, ModelView)
+            for m in s.scalars(
+                select(t.Model)
+                .where(t.Model.experiment_id == experiment_id)
+                .order_by(t.Model.created_at.desc())
+            )
+        ]
 
 
 @app.get("/forecasts", response_model=list[ForecastView])
-def forecasts(experiment_id: str, model_id: str | None = None, mode: str | None = None, limit: int = Query(100, ge=1, le=1000)):
+def forecasts(
+    experiment_id: str,
+    model_id: str | None = None,
+    mode: str | None = None,
+    limit: int = Query(100, ge=1, le=1000),
+):
     with transaction() as s:
         query = select(t.Forecast).where(t.Forecast.experiment_id == experiment_id)
         if model_id:
             query = query.where(t.Forecast.model_id == model_id)
         if mode:
             query = query.where(t.Forecast.mode == mode)
-        return [view(f, ForecastView) for f in s.scalars(query.order_by(t.Forecast.start.desc(), t.Forecast.created_at).limit(limit))]
+        return [
+            view(f, ForecastView)
+            for f in s.scalars(query.order_by(t.Forecast.start.desc(), t.Forecast.created_at).limit(limit))
+        ]
 
 
 @app.get("/forecasts/{forecast_id}", response_model=ForecastView)
@@ -95,7 +121,12 @@ def forecast_detail(forecast_id: str):
 
 
 def latest_evaluation(s, forecast_id):
-    return s.scalar(select(t.Evaluation).where(t.Evaluation.forecast_id == forecast_id).order_by(t.Evaluation.version.desc()).limit(1))
+    return s.scalar(
+        select(t.Evaluation)
+        .where(t.Evaluation.forecast_id == forecast_id)
+        .order_by(t.Evaluation.version.desc())
+        .limit(1)
+    )
 
 
 @app.get("/forecasts/{forecast_id}/map")
@@ -105,30 +136,72 @@ def forecast_map(forecast_id: str) -> dict:
         if not forecast:
             raise HTTPException(404, "Unknown forecast")
         experiment = s.get(t.Experiment, forecast.experiment_id)
-        query = select(t.Cell, t.ForecastCell).join(t.ForecastCell, t.ForecastCell.cell_id == t.Cell.id).where(
-            t.ForecastCell.forecast_id == forecast_id, t.Cell.grid_id == experiment.grid_id)
+        query = (
+            select(t.Cell, t.ForecastCell)
+            .join(t.ForecastCell, t.ForecastCell.cell_id == t.Cell.id)
+            .where(t.ForecastCell.forecast_id == forecast_id, t.Cell.grid_id == experiment.grid_id)
+        )
         evaluation = latest_evaluation(s, forecast_id)
-        observed = {} if not evaluation else {c.cell_id: c for c in s.scalars(select(t.EvaluationCell).where(t.EvaluationCell.evaluation_id == evaluation.id))}
-        features = [{"type": "Feature", "id": c.id, "geometry": c.geojson,
-                     "properties": {"cell_id": c.id, "probability": f.probability, "band": f.band,
-                                    "area_km2": c.area_km2, "observed_count": observed[c.id].observed_count if c.id in observed else None,
-                                    "outcome": observed[c.id].outcome if c.id in observed else "unknown"}}
-                    for c, f in s.execute(query)]
+        observed = (
+            {}
+            if not evaluation
+            else {
+                c.cell_id: c
+                for c in s.scalars(
+                    select(t.EvaluationCell).where(t.EvaluationCell.evaluation_id == evaluation.id)
+                )
+            }
+        )
+        features = [
+            {
+                "type": "Feature",
+                "id": c.id,
+                "geometry": c.geojson,
+                "properties": {
+                    "cell_id": c.id,
+                    "probability": f.probability,
+                    "band": f.band,
+                    "area_km2": c.area_km2,
+                    "observed_count": observed[c.id].observed_count if c.id in observed else None,
+                    "outcome": observed[c.id].outcome if c.id in observed else "unknown",
+                },
+            }
+            for c, f in s.execute(query)
+        ]
         event_features = []
         if evaluation and evaluation.status != "awaiting_data":
             snapshot = s.get(t.Snapshot, evaluation.snapshot_id)
-            rows = s.scalars(select(t.Revision).where(t.Revision.id.in_(snapshot.revision_ids),
-                            t.Revision.origin_time >= forecast.start, t.Revision.origin_time < forecast.end,
-                            t.Revision.magnitude >= experiment.config["target_magnitude"]))
+            rows = s.scalars(
+                select(t.Revision).where(
+                    t.Revision.id.in_(snapshot.revision_ids),
+                    t.Revision.origin_time >= forecast.start,
+                    t.Revision.origin_time < forecast.end,
+                    t.Revision.magnitude >= experiment.config["target_magnitude"],
+                )
+            )
             from .grid import StudyGrid
+
             grid = StudyGrid.from_spec(s.get(t.Grid, experiment.grid_id).spec)
-            event_features = [{"type": "Feature", "geometry": {"type": "Point", "coordinates": [r.longitude, r.latitude]},
-                               "properties": {"id": r.event_id, "magnitude": r.magnitude, "magnitude_type": r.magnitude_type,
-                                              "depth_km": r.depth_km, "time": r.origin_time.isoformat()}}
-                              for r in rows if grid.assign(r.longitude, r.latitude) is not None]
-        return {"cells": {"type": "FeatureCollection", "features": features},
-                "events": {"type": "FeatureCollection", "features": event_features},
-                "evaluation": view(evaluation, EvaluationView) if evaluation else None}
+            event_features = [
+                {
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [r.longitude, r.latitude]},
+                    "properties": {
+                        "id": r.event_id,
+                        "magnitude": r.magnitude,
+                        "magnitude_type": r.magnitude_type,
+                        "depth_km": r.depth_km,
+                        "time": r.origin_time.isoformat(),
+                    },
+                }
+                for r in rows
+                if grid.assign(r.longitude, r.latitude) is not None
+            ]
+        return {
+            "cells": {"type": "FeatureCollection", "features": features},
+            "events": {"type": "FeatureCollection", "features": event_features},
+            "evaluation": view(evaluation, EvaluationView) if evaluation else None,
+        }
 
 
 @app.get("/forecasts/{forecast_id}/cells/{cell_id}")
@@ -142,16 +215,34 @@ def cell_detail(forecast_id: str, cell_id: str) -> dict:
         model = s.get(t.Model, forecast.model_id)
         evaluation = latest_evaluation(s, forecast_id)
         outcome = s.get(t.EvaluationCell, (evaluation.id, cell_id)) if evaluation else None
-        prior = s.execute(select(t.Forecast.start, t.ForecastCell.probability).join(t.ForecastCell, t.ForecastCell.forecast_id == t.Forecast.id)
-                          .where(t.Forecast.experiment_id == experiment.id, t.Forecast.model_id == model.id,
-                                 t.Forecast.mode == forecast.mode, t.Forecast.start < forecast.start,
-                                 t.ForecastCell.cell_id == cell_id).order_by(t.Forecast.start.desc()).limit(7)).all()
-        return {"cell_id": cell_id, "probability": cell.probability, "band": cell.band,
-                "expected_count": cell.expected_count, "target": f"At least one catalogue event M ≥ {experiment.config['target_magnitude']} in 24 hours",
-                "source": experiment.config["magnitude_policy"], "model": model.algorithm, "model_id": model.id,
-                "model_artifact": model.artifact, "input_cutoff": forecast.input_cutoff,
-                "observed_count": outcome.observed_count if outcome else None, "outcome": outcome.outcome if outcome else "unknown",
-                "history": [{"start": a, "probability": p} for a, p in prior]}
+        prior = s.execute(
+            select(t.Forecast.start, t.ForecastCell.probability)
+            .join(t.ForecastCell, t.ForecastCell.forecast_id == t.Forecast.id)
+            .where(
+                t.Forecast.experiment_id == experiment.id,
+                t.Forecast.model_id == model.id,
+                t.Forecast.mode == forecast.mode,
+                t.Forecast.start < forecast.start,
+                t.ForecastCell.cell_id == cell_id,
+            )
+            .order_by(t.Forecast.start.desc())
+            .limit(7)
+        ).all()
+        return {
+            "cell_id": cell_id,
+            "probability": cell.probability,
+            "band": cell.band,
+            "expected_count": cell.expected_count,
+            "target": f"At least one catalogue event M ≥ {experiment.config['target_magnitude']} in 24 hours",
+            "source": experiment.config["magnitude_policy"],
+            "model": model.algorithm,
+            "model_id": model.id,
+            "model_artifact": model.artifact,
+            "input_cutoff": forecast.input_cutoff,
+            "observed_count": outcome.observed_count if outcome else None,
+            "outcome": outcome.outcome if outcome else "unknown",
+            "history": [{"start": a, "probability": p} for a, p in prior],
+        }
 
 
 @app.get("/evaluations/{evaluation_id}", response_model=EvaluationView)
@@ -163,13 +254,22 @@ def evaluation_detail(evaluation_id: str):
 @app.get("/forecasts/{forecast_id}/evaluations", response_model=list[EvaluationView])
 def evaluation_history(forecast_id: str):
     with transaction() as s:
-        return [view(e, EvaluationView) for e in s.scalars(select(t.Evaluation).where(t.Evaluation.forecast_id == forecast_id).order_by(t.Evaluation.version.desc()))]
+        return [
+            view(e, EvaluationView)
+            for e in s.scalars(
+                select(t.Evaluation)
+                .where(t.Evaluation.forecast_id == forecast_id)
+                .order_by(t.Evaluation.version.desc())
+            )
+        ]
 
 
 @app.get("/jobs", response_model=list[JobView])
 def jobs(limit: int = Query(30, ge=1, le=100)):
     with transaction() as s:
-        return [view(j, JobView) for j in s.scalars(select(t.Job).order_by(t.Job.created_at.desc()).limit(limit))]
+        return [
+            view(j, JobView) for j in s.scalars(select(t.Job).order_by(t.Job.created_at.desc()).limit(limit))
+        ]
 
 
 @app.get("/jobs/{job_id}", response_model=JobView)
@@ -191,6 +291,7 @@ def cancel_job(job_id: str):
 
 def submit(kind: str, body: JobRequest):
     from .jobs import enqueue
+
     if body.experiment_id:
         with transaction() as s:
             if not s.get(t.Experiment, body.experiment_id):
@@ -251,112 +352,231 @@ def sources() -> dict:
         result = []
         for source in s.scalars(select(t.Source).order_by(t.Source.created_at)):
             counts = s.scalar(select(func.count()).select_from(t.Event).where(t.Event.source_id == source.id))
-            coverage = s.execute(select(t.Ingestion.start, t.Ingestion.end, t.Ingestion.status, t.Ingestion.report)
-                                 .where(t.Ingestion.source_id == source.id).order_by(t.Ingestion.created_at.desc()).limit(40)).all()
-            result.append({"id": source.id, "name": source.name, "provider": source.provider,
-                           "status": source.status, "attribution": source.attribution, "event_count": counts,
-                           "details": source.details, "coverage": [{"start": a, "end": b, "status": c, "report": d} for a,b,c,d in coverage]})
+            coverage = s.execute(
+                select(t.Ingestion.start, t.Ingestion.end, t.Ingestion.status, t.Ingestion.report)
+                .where(t.Ingestion.source_id == source.id)
+                .order_by(t.Ingestion.created_at.desc())
+                .limit(40)
+            ).all()
+            result.append(
+                {
+                    "id": source.id,
+                    "name": source.name,
+                    "provider": source.provider,
+                    "status": source.status,
+                    "attribution": source.attribution,
+                    "event_count": counts,
+                    "details": source.details,
+                    "coverage": [{"start": a, "end": b, "status": c, "report": d} for a, b, c, d in coverage],
+                }
+            )
         worker = s.get(t.WorkerState, "scheduler")
-        return {"sources": result, "worker": {"heartbeat": worker.heartbeat, "online": worker.heartbeat > t.now()-timedelta(seconds=90)} if worker else None,
-                "schedule_timezone": "Asia/Tokyo", "schedule_enabled": settings.schedule_enabled}
+        return {
+            "sources": result,
+            "worker": {
+                "heartbeat": worker.heartbeat,
+                "online": worker.heartbeat > t.now() - timedelta(seconds=90),
+            }
+            if worker
+            else None,
+            "schedule_timezone": "Asia/Tokyo",
+            "schedule_enabled": settings.schedule_enabled,
+        }
 
 
 @app.get("/events")
-def events(experiment_id: str, start: str | None = None, end: str | None = None,
-           min_magnitude: float = Query(0, ge=-3, le=10), offset: int = Query(0, ge=0), limit: int = Query(100, ge=1, le=1000)) -> dict:
+def events(
+    experiment_id: str,
+    start: str | None = None,
+    end: str | None = None,
+    min_magnitude: float = Query(0, ge=-3, le=10),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+) -> dict:
     from .catalogue import load_experiment, revisions_asof
     from .timeutil import utc
+
     experiment, grid = load_experiment(experiment_id)
-    rows = [r for r in revisions_asof(experiment.source_id, t.now()) if r.magnitude >= min_magnitude
-            and (not start or r.origin_time >= utc(start)) and (not end or r.origin_time < utc(end))
-            and grid.assign(r.longitude, r.latitude) is not None]
-    return {"total": len(rows), "offset": offset, "items": [revision_view(r) for r in rows[offset:offset+limit]]}
+    rows = [
+        r
+        for r in revisions_asof(experiment.source_id, t.now())
+        if r.magnitude >= min_magnitude
+        and (not start or r.origin_time >= utc(start))
+        and (not end or r.origin_time < utc(end))
+        and grid.assign(r.longitude, r.latitude) is not None
+    ]
+    return {
+        "total": len(rows),
+        "offset": offset,
+        "items": [revision_view(r) for r in rows[offset : offset + limit]],
+    }
 
 
 def revision_view(r):
-    return {k: getattr(r,k) for k in ("id", "event_id", "origin_time", "received_at", "provider_updated", "longitude", "latitude", "depth_km", "magnitude", "magnitude_type", "status", "raw_ref")}
+    return {
+        k: getattr(r, k)
+        for k in (
+            "id",
+            "event_id",
+            "origin_time",
+            "received_at",
+            "provider_updated",
+            "longitude",
+            "latitude",
+            "depth_km",
+            "magnitude",
+            "magnitude_type",
+            "status",
+            "raw_ref",
+        )
+    }
 
 
 @app.get("/events/{event_id}/revisions")
 def event_revisions(event_id: str) -> list[dict]:
     with transaction() as s:
-        return [revision_view(r) for r in s.scalars(select(t.Revision).where(t.Revision.event_id == event_id).order_by(t.Revision.received_at))]
+        return [
+            revision_view(r)
+            for r in s.scalars(
+                select(t.Revision).where(t.Revision.event_id == event_id).order_by(t.Revision.received_at)
+            )
+        ]
 
 
 @app.get("/metrics")
 def metrics(experiment_id: str, mode: str, days: int = Query(30, ge=0, le=3650)) -> dict:
-    from .metrics import aggregate, brier_skill, paired_block_interval
     from .artifacts import digest
+    from .metrics import aggregate, brier_skill, paired_block_interval
+
     with transaction() as s:
-        query = select(t.Forecast,t.Model).join(t.Model,t.Model.id == t.Forecast.model_id).where(
-            t.Forecast.experiment_id == experiment_id,t.Forecast.mode == mode)
+        query = (
+            select(t.Forecast, t.Model)
+            .join(t.Model, t.Model.id == t.Forecast.model_id)
+            .where(t.Forecast.experiment_id == experiment_id, t.Forecast.mode == mode)
+        )
         forecasts = list(s.execute(query.order_by(t.Forecast.start)))
         if forecasts and days:
-            latest = max(f.end for f,m in forecasts)
-            forecasts = [(f,m) for f,m in forecasts if f.start >= latest-timedelta(days=days)]
+            latest = max(f.end for f, m in forecasts)
+            forecasts = [(f, m) for f, m in forecasts if f.start >= latest - timedelta(days=days)]
         records = []
-        for f,m in forecasts:
-            e = latest_evaluation(s,f.id)
+        for f, m in forecasts:
+            e = latest_evaluation(s, f.id)
             if not e:
                 continue
-            snapshot = s.get(t.Snapshot,e.snapshot_id)
+            snapshot = s.get(t.Snapshot, e.snapshot_id)
             signature = digest(snapshot.revision_ids)
-            records.append({"date":f.start.isoformat(),"forecast_id":f.id,"model_id":m.id,"algorithm":m.algorithm,
-                            "evaluation_id":e.id,"evaluation_version":e.version,"status":e.status,"snapshot":signature,"metrics":e.metrics})
-        baseline = {r["date"]:r for r in records if r["algorithm"] == "historical_rate"}
+            records.append(
+                {
+                    "date": f.start.isoformat(),
+                    "forecast_id": f.id,
+                    "model_id": m.id,
+                    "algorithm": m.algorithm,
+                    "evaluation_id": e.id,
+                    "evaluation_version": e.version,
+                    "status": e.status,
+                    "snapshot": signature,
+                    "metrics": e.metrics,
+                }
+            )
+        baseline = {r["date"]: r for r in records if r["algorithm"] == "historical_rate"}
         models = {}
         for r in records:
-            models.setdefault(r["model_id"],[]).append(r)
+            models.setdefault(r["model_id"], []).append(r)
         comparisons = []
         for model_id, series in models.items():
-            paired = [r for r in series if r["date"] in baseline and r["metrics"]["n"] > 0
-                      and r["snapshot"] == baseline[r["date"]]["snapshot"]
-                      and r["metrics"]["n"] == baseline[r["date"]]["metrics"]["n"]]
+            paired = [
+                r
+                for r in series
+                if r["date"] in baseline
+                and r["metrics"]["n"] > 0
+                and r["snapshot"] == baseline[r["date"]]["snapshot"]
+                and r["metrics"]["n"] == baseline[r["date"]]["metrics"]["n"]
+            ]
             model_score = aggregate([r["metrics"] for r in paired])
             reference_score = aggregate([baseline[r["date"]]["metrics"] for r in paired])
             # Only contiguous daily sequences qualify for time-block uncertainty.
             from .timeutil import utc
+
             dates = sorted(utc(r["date"]) for r in paired)
-            contiguous = all(b-a == timedelta(days=1) for a,b in zip(dates,dates[1:]))
-            uncertainty = paired_block_interval([r["metrics"]["brier"]-baseline[r["date"]]["metrics"]["brier"] for r in paired]) if contiguous else {"status":"insufficient_data","reason":"Nonconsecutive eligible days"}
-            comparisons.append({"model_id":model_id,"algorithm":series[0]["algorithm"],"metrics":aggregate([r["metrics"] for r in series]),
-                                "paired_metrics":model_score,"brier_skill":brier_skill(model_score["brier"],reference_score["brier"]),
-                                "paired_days":len(paired),"excluded_days":len(series)-len(paired),"uncertainty":uncertainty})
-        return {"mode":mode,"days":days,"series":records,"comparisons":comparisons,
-                "matching_policy":"same experiment, start, mode, observation revision set and eligible cells"}
+            contiguous = all(b - a == timedelta(days=1) for a, b in pairwise(dates))
+            uncertainty = (
+                paired_block_interval(
+                    [r["metrics"]["brier"] - baseline[r["date"]]["metrics"]["brier"] for r in paired]
+                )
+                if contiguous
+                else {"status": "insufficient_data", "reason": "Nonconsecutive eligible days"}
+            )
+            comparisons.append(
+                {
+                    "model_id": model_id,
+                    "algorithm": series[0]["algorithm"],
+                    "metrics": aggregate([r["metrics"] for r in series]),
+                    "paired_metrics": model_score,
+                    "brier_skill": brier_skill(model_score["brier"], reference_score["brier"]),
+                    "paired_days": len(paired),
+                    "excluded_days": len(series) - len(paired),
+                    "uncertainty": uncertainty,
+                }
+            )
+        return {
+            "mode": mode,
+            "days": days,
+            "series": records,
+            "comparisons": comparisons,
+            "matching_policy": "same experiment, start, mode, observation revision set and eligible cells",
+        }
 
 
 @app.post("/imports", response_model=JobView, status_code=202)
-async def import_file(experiment_id: str = Form(...), start: str = Form(...), end: str = Form(...),
-                      namespace: str = Form(...), format: str = Form("jma"), file: UploadFile = File(...)):
+async def import_file(
+    experiment_id: str = Form(...),
+    start: str = Form(...),
+    end: str = Form(...),
+    namespace: str = Form(...),
+    format: str = Form("jma"),
+    file: UploadFile = File(...),
+):
     from .artifacts import put
     from .jobs import enqueue
     from .timeutil import utc
-    if format not in {"jma","csv"} or not namespace or len(namespace) > 80:
-        raise HTTPException(422,"Use jma/csv format and a short stable file namespace")
-    a,b = utc(start),utc(end)
+
+    if format not in {"jma", "csv"} or not namespace or len(namespace) > 80:
+        raise HTTPException(422, "Use jma/csv format and a short stable file namespace")
+    a, b = utc(start), utc(end)
     if not a < b <= t.now():
-        raise HTTPException(422,"Declare the completed catalogue coverage interval")
-    raw = await file.read(32*1024*1024+1)
-    if len(raw) > 32*1024*1024:
-        raise HTTPException(413,"Maximum uncompressed file size is 32 MiB")
-    ref = put(raw,"txt")
+        raise HTTPException(422, "Declare the completed catalogue coverage interval")
+    raw = await file.read(32 * 1024 * 1024 + 1)
+    if len(raw) > 32 * 1024 * 1024:
+        raise HTTPException(413, "Maximum uncompressed file size is 32 MiB")
+    ref = put(raw, "txt")
     with transaction() as s:
-        experiment = s.get(t.Experiment,experiment_id)
+        experiment = s.get(t.Experiment, experiment_id)
         if not experiment or experiment.config["provider"] != "jma":
-            raise HTTPException(422,"Select a separate JMA experiment first")
-    payload = {"experiment_id":experiment_id,"start":a.isoformat(),"end":b.isoformat(),"namespace":namespace,"format":format,"artifact":ref}
-    return view(enqueue("import",payload,f"import:{experiment_id}:{namespace}:{ref}"),JobView)
+            raise HTTPException(422, "Select a separate JMA experiment first")
+    payload = {
+        "experiment_id": experiment_id,
+        "start": a.isoformat(),
+        "end": b.isoformat(),
+        "namespace": namespace,
+        "format": format,
+        "artifact": ref,
+    }
+    return view(enqueue("import", payload, f"import:{experiment_id}:{namespace}:{ref}"), JobView)
 
 
 @app.get("/exports/forecasts/{forecast_id}")
 def export_forecast(forecast_id: str):
     forecast = forecast_detail(forecast_id)
-    body = {"forecast":forecast.model_dump(mode="json"),"map":forecast_map(forecast_id)}
-    return JSONResponse(__import__("fastapi.encoders",fromlist=["jsonable_encoder"]).jsonable_encoder(body),
-                        headers={"Content-Disposition":f'attachment; filename="yureatlas-{forecast_id}.json"'})
+    body = {"forecast": forecast.model_dump(mode="json"), "map": forecast_map(forecast_id)}
+    return JSONResponse(
+        __import__("fastapi.encoders", fromlist=["jsonable_encoder"]).jsonable_encoder(body),
+        headers={"Content-Disposition": f'attachment; filename="yureatlas-{forecast_id}.json"'},
+    )
 
 
 @app.get("/exports/metrics")
 def export_metrics(experiment_id: str, mode: str):
-    return JSONResponse(metrics(experiment_id,mode,0),headers={"Content-Disposition":'attachment; filename="yureatlas-metrics.json"'})
+    return JSONResponse(
+        metrics(experiment_id, mode, 0),
+        headers={"Content-Disposition": 'attachment; filename="yureatlas-metrics.json"'},
+    )

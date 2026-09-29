@@ -1,12 +1,11 @@
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-UTC = timezone.utc
 JST = ZoneInfo("Asia/Tokyo")
 
 
 def utc(value: str | datetime) -> datetime:
-    value = datetime.fromisoformat(value.replace("Z", "+00:00")) if isinstance(value, str) else value
+    value = datetime.fromisoformat(value) if isinstance(value, str) else value
     if value.tzinfo is None:
         raise ValueError("Timestamp must include a timezone")
     return value.astimezone(UTC)

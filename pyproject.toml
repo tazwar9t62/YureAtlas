@@ -23,5 +23,7 @@ testpaths = ["services/api/tests"]
 [tool.ruff]
 line-length = 110
 target-version = "py312"
+[tool.ruff.lint.per-file-ignores]
+"services/api/src/yureatlas/api.py" = ["B008"]
 [project.scripts]
 yureatlas = "yureatlas.cli:main"

@@ -1,12 +1,13 @@
 name: yureatlas
 services:
   db:
+    image: yureatlas-db:0.1.0
     build: ./infra/db
     environment:
       POSTGRES_DB: yureatlas
       POSTGRES_USER: yureatlas
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-yureatlas_local}
-    ports: ["127.0.0.1:55432:5432"]
+    ports: ["127.0.0.1:${DB_PORT:-55432}:5432"]
     volumes: ["database:/var/lib/postgresql/data"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U yureatlas -d yureatlas"]
@@ -15,9 +16,12 @@ services:
       retries: 30
     restart: unless-stopped
   api:
+    image: yureatlas-python:0.1.0
     build:
       context: .
       dockerfile: services/api/Dockerfile
+      args:
+        CODE_VERSION: ${CODE_VERSION:-unavailable}
     environment: &python-env
       DATABASE_URL: postgresql+psycopg://yureatlas:${POSTGRES_PASSWORD:-yureatlas_local}@db:5432/yureatlas
       ARTIFACT_DIR: /data/artifacts
@@ -29,12 +33,15 @@ services:
     depends_on:
       db: {condition: service_healthy}
     volumes: ["artifacts:/data/artifacts"]
-    ports: ["127.0.0.1:8000:8000"]
+    ports: ["127.0.0.1:${API_PORT:-8000}:8000"]
     restart: unless-stopped
   worker:
+    image: yureatlas-python:0.1.0
     build:
       context: .
       dockerfile: services/api/Dockerfile
+      args:
+        CODE_VERSION: ${CODE_VERSION:-unavailable}
     command: ["python", "-m", "yureatlas.worker"]
     environment: *python-env
     depends_on:
@@ -42,11 +49,12 @@ services:
     volumes: ["artifacts:/data/artifacts"]
     restart: unless-stopped
   web:
+    image: yureatlas-web:0.1.0
     build: ./apps/web
     environment:
       API_INTERNAL_URL: http://api:8000
     depends_on: [api]
-    ports: ["127.0.0.1:3000:3000"]
+    ports: ["127.0.0.1:${WEB_PORT:-3000}:3000"]
     restart: unless-stopped
 volumes:
   database:

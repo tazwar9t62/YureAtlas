@@ -4,7 +4,7 @@
 
 Experimental forecast — not an official warning.
 
-The project is being built in six independently verified increments; see [the build record](docs/progress.md).
+**Status: development paused at an unfinished prototype checkpoint.** Core data/model workflows and the dashboard are implemented; browser acceptance, current database test failures, clean installation and backup/restore verification remain. See the [resume handoff](docs/handoff.md), [verification evidence](docs/verification.md), and [build record](docs/progress.md).
 
 Stack: Next.js, FastAPI, PostgreSQL/PostGIS, NumPy/scikit-learn, separate durable worker. No cloud credentials, GPU, Redis, or paid maps.
 

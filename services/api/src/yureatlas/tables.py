@@ -1,9 +1,20 @@
 """Relational archive. Immutable entities are additionally protected by DB triggers."""
+
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from geoalchemy2 import Geometry
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -15,7 +26,7 @@ def uid():
 
 
 def now():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Identity:
@@ -140,7 +151,9 @@ class Forecast(Identity, Base):
 
 class ForecastCell(Base):
     __tablename__ = "forecast_cells"
-    __table_args__ = (CheckConstraint("probability >= 0 AND probability <= 1 AND probability != 'NaN'::float8"),)
+    __table_args__ = (
+        CheckConstraint("probability >= 0 AND probability <= 1 AND probability != 'NaN'::float8"),
+    )
     forecast_id: Mapped[str] = mapped_column(ForeignKey("forecast_runs.id"), primary_key=True)
     cell_id: Mapped[str] = mapped_column(String, primary_key=True)
     probability: Mapped[float] = mapped_column(Float)

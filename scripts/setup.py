@@ -1,4 +1,5 @@
 """Non-destructive configuration creation and prerequisite validation."""
+
 import secrets
 import shutil
 import subprocess
