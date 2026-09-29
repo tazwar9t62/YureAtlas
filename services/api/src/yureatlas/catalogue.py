@@ -31,11 +31,11 @@ def ensure_experiment(spec: ExperimentSpec) -> Experiment:
                 raise ValueError("Experiment name already belongs to a different immutable specification")
             return existing
         domain_key = digest({k: config[k] for k in ("west", "south", "east", "north", "input_magnitude")})[:12]
-        source_name = "synthetic_seed_2026" if spec.provider == "synthetic" else f"{spec.provider}:{domain_key}"
+        source_name = f"synthetic:{spec.name}" if spec.provider == "synthetic" else f"{spec.provider}:{domain_key}"
         source = s.scalar(select(Source).where(Source.name == source_name))
         if not source:
             source = Source(name=source_name, provider=spec.provider, attribution=ATTRIBUTION[spec.provider],
-                            status="uninitialized", details={"verified_format": spec.provider != "jma"})
+                            status="uninitialized", details={"verified_format": True})
             s.add(source)
             s.flush()
         grid_row = s.scalar(select(Grid).where(Grid.geometry_hash == grid.hash))

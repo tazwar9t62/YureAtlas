@@ -62,7 +62,7 @@ class USGS:
                   "minlatitude": bounds["south"], "maxlatitude": bounds["north"],
                   "minlongitude": bounds["west"], "maxlongitude": bounds["east"],
                   "minmagnitude": minimum, "includedeleted": "true"}
-        count = int(self.request(self.url + "count", params=params).text)
+        count = int(self.request(self.url + "count", params=dict(params, format="geojson")).json()["count"])
         if count >= 19000:
             if end-start < timedelta(seconds=1):
                 raise ValueError("Catalogue interval cannot be safely subdivided")
