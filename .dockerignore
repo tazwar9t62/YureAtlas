@@ -1,0 +1,9 @@
+.git
+.tools
+.venv
+data
+backups
+**/node_modules
+**/.next
+**/__pycache__
+.env

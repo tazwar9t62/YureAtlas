@@ -1,0 +1,27 @@
+[project]
+name = "yureatlas"
+version = "0.1.0"
+description = "Local, reproducible earthquake forecasting research workbench"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "fastapi>=0.115,<1", "uvicorn>=0.34,<1", "pydantic-settings>=2.8,<3",
+  "sqlalchemy>=2.0,<2.1", "alembic>=1.15,<2", "psycopg[binary]>=3.2,<4",
+  "geoalchemy2>=0.17,<1", "pyproj>=3.7,<4", "shapely>=2.1,<3",
+  "numpy>=2.2,<3", "scipy>=1.15,<2", "scikit-learn>=1.6,<2",
+  "pandas>=2.2,<3", "pyarrow>=19,<24", "httpx>=0.28,<1",
+  "apscheduler>=3.11,<4", "joblib>=1.4,<2", "python-multipart>=0.0.20,<1",
+]
+[dependency-groups]
+dev = ["pytest>=8.3,<10", "pytest-cov>=6,<8", "ruff>=0.11,<1"]
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+[tool.hatch.build.targets.wheel]
+packages = ["services/api/src/yureatlas"]
+[tool.pytest.ini_options]
+testpaths = ["services/api/tests"]
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+[project.scripts]
+yureatlas = "yureatlas.cli:main"
