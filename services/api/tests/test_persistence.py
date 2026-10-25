@@ -1,6 +1,5 @@
-"""Integration invariants use their own schema inside the local test database."""
+"""Integration invariants run only in a harness-owned disposable database."""
 
-import os
 from datetime import timedelta
 
 import pytest
@@ -14,9 +13,7 @@ from yureatlas.schemas import ExperimentSpec
 from yureatlas.tables import Evaluation, ForecastCell, Job, Revision, now
 from yureatlas.timeutil import utc
 
-pytestmark = pytest.mark.skipif(
-    os.getenv("YUREATLAS_INTEGRATION") != "1", reason="Set YUREATLAS_INTEGRATION=1 with migrated PostGIS"
-)
+pytestmark = pytest.mark.integration
 
 
 @pytest.fixture

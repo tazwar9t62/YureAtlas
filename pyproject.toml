@@ -20,6 +20,8 @@ build-backend = "hatchling.build"
 packages = ["services/api/src/yureatlas"]
 [tool.pytest.ini_options]
 testpaths = ["services/api/tests"]
+pythonpath = ["."]
+markers = ["integration: requires a harness-owned disposable PostGIS database"]
 [tool.ruff]
 line-length = 110
 target-version = "py312"

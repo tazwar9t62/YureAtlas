@@ -67,8 +67,8 @@ Problem: the latest checkpoint database suite failed during setup/cleanup; test 
 
 | Smaller issue | Status / evidence |
 | --- | --- |
-| T01.1 [#6](https://github.com/tazwar9t62/YureAtlas/issues/6): environment diagnosis | Implemented: fresh isolated baseline 19 passed; [diagnosis](verification.md#2026-10-25-database-diagnosis-t011) |
-| T01.2 [#7](https://github.com/tazwar9t62/YureAtlas/issues/7): owned isolation and cleanup | Planned |
+| T01.1 [#6](https://github.com/tazwar9t62/YureAtlas/issues/6): environment diagnosis | Implemented in `43ca83a`: fresh isolated baseline 19 passed; [diagnosis](verification.md#2026-10-25-database-diagnosis-t011) |
+| T01.2 [#7](https://github.com/tazwar9t62/YureAtlas/issues/7): owned isolation and cleanup | Implemented: 47 unit checks and all 4 PostGIS checks passed; ownership, failure and real descendant-process regressions included |
 | T01.3 [#8](https://github.com/tazwar9t62/YureAtlas/issues/8): independent verification commands | Planned |
 | T01.4 [#9](https://github.com/tazwar9t62/YureAtlas/issues/9): isolated CI | Planned |
 
@@ -217,4 +217,6 @@ Pre-merge acceptance: T01–T10 are verified and merged through the requested re
 
 Each subsequent task updates this ledger and the task board before its PR. Exact current-head review and merge evidence also lives in the linked GitHub PR/issue to avoid self-referential commit hashes in this file.
 
-T01 started from merged main `473515251b40559d4b88463370ab895ec1c1e7e3` on `test/isolated-verification`; parent #5 and smaller issues #6–#9 were created before implementation. Starting the installed Docker Desktop restored daemon access without resetting volumes. The existing disposable backend harness passed all 19 tests and cleaned its database; the historical failed-run database was preserved. Historical failure cause remains unproven. T01.2 hardens isolation and failure handling next.
+T01 started from merged main `473515251b40559d4b88463370ab895ec1c1e7e3` on `test/isolated-verification`; parent #5 and smaller issues #6–#9 were created before implementation. Starting the installed Docker Desktop restored daemon access without resetting volumes. The existing disposable backend harness passed all 19 tests and cleaned its database; the historical failed-run database was preserved. Historical failure cause remains unproven.
+
+T01.2 verifies the effective database and ownership before migrations, rejects unsafe direct integration invocation, uses the current interpreter and owned temporary artifacts, revalidates resource identity before deletion, and terminates/reaps child processes before cleanup. Primary errors survive independent cleanup failures. Verification: 47 unit checks passed (including 32 new harness regressions), all 4 PostGIS checks passed, and targeted Ruff/whitespace checks passed. SIGKILL or machine loss cannot guarantee cleanup; printed resource names support later inspection. T01.3 will wire separate unit and integration commands into the default test target.
