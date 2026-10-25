@@ -5,16 +5,15 @@ for each exact window. Its score never participates in selection. Rolling folds
 may therefore use different reference model versions; every choice is returned.
 """
 
+import json
 from collections import Counter, defaultdict
-from datetime import timedelta
-from itertools import pairwise
-from math import isfinite
 
 from .artifacts import digest
-from .metrics import aggregate, brier_skill, paired_block_interval
+from .metrics import aggregate, brier_skill, paired_score_interval, valid_totals
 from .timeutil import utc
 
 POLICY_VERSION = "earliest-compatible-historical-rate-v1"
+SCORE_POLICY_VERSION = "pooled-eligible-cell-windows-v1"
 MATCHING_POLICY = (
     "Earliest archived compatible historical_rate reference per exact window, ordered by "
     "forecast.created_at, model_id, forecast_id; same experiment, start/end, mode, grid, "
@@ -27,23 +26,23 @@ def _evidence(record):
     if record["evaluation_id"] is None:
         return "not_evaluated", None, None, None
     metrics = record["metrics"]
-    if record["status"] == "awaiting_data" or not metrics or metrics.get("n") == 0:
-        return "observations_unavailable", None, None, None
+    if not valid_totals(metrics):
+        return "evidence_invalid", None, None, None
     n, missing = metrics.get("n"), metrics.get("missing")
     revisions, observations = record["revision_ids"], record["observations"]
+    grid_ids = record.get("grid_cell_ids")
     if (
-        record["status"] != "provisional"
-        or type(n) is not int
-        or n < 0
-        or type(missing) is not int
-        or missing < 0
+        record["status"] not in {"provisional", "awaiting_data"}
         or not record.get("grid_hash")
         or record.get("evidence_valid") is False
         or revisions is None
         or not all(isinstance(item, str) and item for item in revisions)
-        or observations is None
-        or len(observations) != n
+        or (grid_ids is not None and n + missing != len(grid_ids))
     ):
+        return "evidence_invalid", None, None, None
+    if record["status"] == "awaiting_data" or n == 0:
+        return "observations_unavailable", None, None, None
+    if observations is None or len(observations) != n:
         return "evidence_invalid", None, None, None
     cells = {}
     for cell_id, label in observations:
@@ -52,13 +51,11 @@ def _evidence(record):
         if cell_id in cells:
             return "evidence_invalid", None, None, None
         cells[cell_id] = label
-    grid_ids = record.get("grid_cell_ids")
     forecast_ids = record.get("forecast_cell_ids")
     if (
-        (grid_ids is not None and (n + missing != len(grid_ids) or not cells.keys() <= set(grid_ids)))
+        (grid_ids is not None and not cells.keys() <= set(grid_ids))
         or (forecast_ids is not None and not cells.keys() <= set(forecast_ids))
-        or not isinstance(metrics.get("brier"), (int, float))
-        or not isfinite(metrics["brier"])
+        or sum(cells.values()) != metrics["positives"]
     ):
         return "evidence_invalid", None, None, None
     return (
@@ -93,6 +90,26 @@ def _normalize(record):
 
 def _reference_order(record):
     return record["forecast_created_at"], record["model_id"], record["forecast_id"]
+
+
+def _trusted_metrics(record):
+    return record["evidence_reason"] is None or (
+        record["evidence_reason"] == "observations_unavailable" and record["metrics"]["n"] == 0
+    )
+
+
+def _score_view(metrics):
+    """Use totals for daily ratios, retaining only finite JSON optional evidence."""
+    result = aggregate([metrics])
+    for key, value in metrics.items():
+        if key in result:
+            continue
+        try:
+            json.dumps(value, allow_nan=False)
+        except (TypeError, ValueError):
+            continue
+        result[key] = value
+    return result
 
 
 def _mismatches(candidate, reference):
@@ -207,20 +224,26 @@ def build_comparison_report(records):
         decisions.extend(model_decisions)
         model_score = aggregate([candidate["metrics"] for candidate, _ in paired])
         reference_score = aggregate([reference["metrics"] for _, reference in paired])
-        # Preserve the existing consecutive-day uncertainty calculation over the
-        # exact references selected above.
-        dates = [candidate["start"] for candidate, _ in paired]
-        contiguous = all(b - a == timedelta(days=1) for a, b in pairwise(dates))
-        uncertainty = (
-            paired_block_interval(
-                [
-                    candidate["metrics"]["brier"] - reference["metrics"]["brier"]
-                    for candidate, reference in paired
-                ]
-            )
-            if contiguous
-            else {"status": "insufficient_data", "reason": "Nonconsecutive eligible days"}
+        uncertainty = paired_score_interval(
+            [
+                {
+                    "start": candidate["start"],
+                    "end": candidate["end"],
+                    "candidate_sum": candidate["metrics"]["brier_sum"],
+                    "reference_sum": reference["metrics"]["brier_sum"],
+                    "candidate_n": candidate["metrics"]["n"],
+                    "reference_n": reference["metrics"]["n"],
+                }
+                for candidate, reference in paired
+            ]
         )
+        # Awaiting-data rows may contribute known missing counts, but never
+        # observations. Unsupported or inconsistent evidence contributes no score.
+        trusted = [r["metrics"] for r in series if _trusted_metrics(r)]
+        all_score = aggregate(trusted)
+        scoreable = sum(r["evidence_reason"] is None for r in series)
+        unknown_size = sum(r.get("grid_cell_ids") is None for r in series)
+        total_cells = None if unknown_size else sum(len(r["grid_cell_ids"]) for r in series)
         reference_models = sorted({reference["model_id"] for _, reference in paired})
         reference_forecasts = sorted({reference["forecast_id"] for _, reference in paired})
         reference_evaluations = sorted({reference["evaluation_id"] for _, reference in paired})
@@ -228,14 +251,37 @@ def build_comparison_report(records):
             {
                 "model_id": model_id,
                 "algorithm": series[0]["algorithm"],
-                "metrics": aggregate([r["metrics"] for r in series if r["metrics"] is not None]),
+                "metrics": all_score,
                 "paired_metrics": model_score,
                 "reference_metrics": reference_score,
                 "brier_skill": brier_skill(model_score["brier"], reference_score["brier"]),
+                "brier_skill_reason": (
+                    "no_pairs"
+                    if not paired
+                    else "reference_brier_zero"
+                    if reference_score["brier"] == 0
+                    else None
+                ),
                 "paired_days": len(paired),
                 "excluded_days": len(series) - len(paired),
                 "total_forecasts": len(series),
                 "evaluated_forecasts": sum(r["evaluation_id"] is not None for r in series),
+                "scoreable_forecasts": scoreable,
+                "unevaluated_forecasts": sum(r["evidence_reason"] == "not_evaluated" for r in series),
+                "unavailable_evaluation_forecasts": sum(
+                    r["evidence_reason"] == "observations_unavailable" for r in series
+                ),
+                "invalid_evidence_forecasts": sum(r["evidence_reason"] == "evidence_invalid" for r in series),
+                "unavailable_forecasts": len(series) - scoreable,
+                "total_cell_windows": total_cells,
+                "observed_cell_windows": all_score["n"],
+                "unscored_cell_windows": None if total_cells is None else total_cells - all_score["n"],
+                "missing_cell_windows": all_score["missing"],
+                "paired_cell_windows": model_score["n"],
+                "paired_missing_cell_windows": model_score["missing"],
+                "excluded_observed_cell_windows": all_score["n"] - model_score["n"],
+                "excluded_missing_cell_windows": all_score["missing"] - model_score["missing"],
+                "unknown_cell_window_forecasts": unknown_size,
                 "uncertainty": uncertainty,
                 "reference_model_ids": reference_models,
                 "reference_model_count": len(reference_models),
@@ -247,11 +293,17 @@ def build_comparison_report(records):
                 "exclusion_reasons": dict(
                     sorted(Counter(reason for d in model_decisions for reason in d["reasons"]).items())
                 ),
+                "primary_exclusion_reasons": dict(
+                    sorted(Counter(d["reason"] for d in model_decisions if d["reason"] is not None).items())
+                ),
                 "decisions": model_decisions,
             }
         )
     return {
         "policy_version": POLICY_VERSION,
+        "score_policy_version": SCORE_POLICY_VERSION,
+        "aggregation_policy": "Pooled valid evaluated sums and counts; missing and unscored cells never enter score denominators. Paired scores use exactly the same selected candidate/reference cell-windows.",
+        "series_policy": "Trusted evaluated scores only, including valid zero-observation evaluations; scalar ratios are recomputed from totals. Invalid and unevaluated forecasts remain in decisions and denominator accounting.",
         "matching_policy": MATCHING_POLICY,
         "series": [
             {
@@ -265,10 +317,10 @@ def build_comparison_report(records):
                 "evaluation_version": r["evaluation_version"],
                 "status": r["status"],
                 "snapshot": r["revision_signature"],
-                "metrics": r["metrics"],
+                "metrics": _score_view(r["metrics"]),
             }
             for r in records
-            if r["evaluation_id"] is not None
+            if _trusted_metrics(r)
         ],
         "comparisons": comparisons,
         "decisions": decisions,

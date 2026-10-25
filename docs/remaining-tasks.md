@@ -103,8 +103,8 @@ Problem: same-date historical-rate versions overwrite each other in arbitrary ro
 
 | Smaller issue | Status / evidence |
 | --- | --- |
-| T03.1 [#18](https://github.com/tazwar9t62/YureAtlas/issues/18): deterministic compatible references | Implemented: 262 unit + all 51 PostGIS checks, lint/types/contracts passed; exact commit recorded in the linked issue |
-| T03.2 [#19](https://github.com/tazwar9t62/YureAtlas/issues/19): exact cohort scores and uncertainty | Planned |
+| T03.1 [#18](https://github.com/tazwar9t62/YureAtlas/issues/18): deterministic compatible references | Implemented in `c5a5c4d`: 262 unit + all 51 PostGIS checks, lint/types/contracts passed |
+| T03.2 [#19](https://github.com/tazwar9t62/YureAtlas/issues/19): exact cohort scores and uncertainty | Implemented: 299 unit + all 51 PostGIS checks, lint/types/contracts passed; exact commit recorded in the linked issue |
 | T03.3 [#20](https://github.com/tazwar9t62/YureAtlas/issues/20): report filters and exports | Planned |
 | T03.4 [#21](https://github.com/tazwar9t62/YureAtlas/issues/21): visible provenance and aligned scope | Planned |
 
