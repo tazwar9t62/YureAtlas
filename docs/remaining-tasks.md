@@ -35,8 +35,8 @@ Dependencies below are in addition to the sequential merge rule. Branch names ar
 
 | ID | Main task | Depends on | Status | Branch | GitHub / PR |
 | --- | --- | --- | --- | --- | --- |
-| T00 | Backlog, traceability, and review guidance | — | In review | `chore/completion-plan` | [#1](https://github.com/tazwar9t62/YureAtlas/issues/1) / [PR #4](https://github.com/tazwar9t62/YureAtlas/pull/4) |
-| T01 | Reliable isolated backend checks and CI foundation | T00 | Planned | `test/isolated-verification` | Not created |
+| T00 | Backlog, traceability, and review guidance | — | Merged | `chore/completion-plan` | [#1](https://github.com/tazwar9t62/YureAtlas/issues/1) / [PR #4](https://github.com/tazwar9t62/YureAtlas/pull/4) |
+| T01 | Reliable isolated backend checks and CI foundation | T00 | In progress | `test/isolated-verification` | [#5](https://github.com/tazwar9t62/YureAtlas/issues/5); PR pending |
 | T02 | Catalogue revisions and import coverage correctness | T01 | Planned | `fix/catalogue-reconciliation` | Not created |
 | T03 | Deterministic baseline comparisons and report scope | T02 | Planned | `fix/comparison-provenance` | Not created |
 | T04 | Prospective timing, model partitions, and scientific checks | T02, T03 | Planned | `test/scientific-invariants` | Not created |
@@ -59,11 +59,18 @@ Problem: the repository documents a paused checkpoint, but has no active issue/P
 
 Completion gate: documentation links resolve, `git diff --check` passes, and the documentation PR receives the requested clear bot review before merging.
 
-Review access: the initial requests received no bot acknowledgement/review while YureAtlas was absent from the account's Code Review repository search. The owner then explicitly authorized the ChatGPT Codex Connector for only `tazwar9t62/YureAtlas` and completed GitHub's identity confirmation. YureAtlas is now visible in Code Review settings. A fresh review of the current PR head is required; its completed outcome must be verified before merging or starting T01.
+Review outcome: after the owner authorized the connector for only YureAtlas and completed GitHub identity confirmation, Codex [completed its review without findings](https://github.com/tazwar9t62/YureAtlas/pull/4#issuecomment-6393834647) of `4685422a927b2e5f3bd8e2c9cf47e5eefbf49188`. Documentation checks and the GitGuardian check passed; there were no outstanding review threads. PR #4 merged as `473515251b40559d4b88463370ab895ec1c1e7e3`.
 
 ## T01 — Reliable isolated backend checks and CI foundation
 
 Problem: the latest checkpoint database suite failed during setup/cleanup; test commands mix different runtimes, browser tests target the main app by default, and CI is absent.
+
+| Smaller issue | Status / evidence |
+| --- | --- |
+| T01.1 [#6](https://github.com/tazwar9t62/YureAtlas/issues/6): environment diagnosis | Implemented: fresh isolated baseline 19 passed; [diagnosis](verification.md#2026-10-25-database-diagnosis-t011) |
+| T01.2 [#7](https://github.com/tazwar9t62/YureAtlas/issues/7): owned isolation and cleanup | Planned |
+| T01.3 [#8](https://github.com/tazwar9t62/YureAtlas/issues/8): independent verification commands | Planned |
+| T01.4 [#9](https://github.com/tazwar9t62/YureAtlas/issues/9): isolated CI | Planned |
 
 - **T01.1 — Diagnose the database environment.** Check the installed Docker daemon and PostGIS health, resource limits, and preserved volumes. Start the existing Docker application if needed. Use a uniquely named disposable database to reproduce setup failures; inspect server logs before changing limits. Record the cause or precise environment limitation. Preserve the primary database and artifacts.
 - **T01.2 — Harden test isolation and cleanup.** Use the running supported Python interpreter, explicit database/artifact ownership, and cleanup that preserves the original failure. Cover migration/test/cleanup failure paths. Remove only resources created by the current test run; report any remnants.
@@ -209,3 +216,5 @@ Pre-merge acceptance: T01–T10 are verified and merged through the requested re
 | 2026-10-25 | Completed the owner-authorized YureAtlas-only connector installation and verified the repository appears in Code Review settings. | GitHub identity confirmation was performed by the owner. Request a fresh overall review after this tracker update; no automatic-review or credit-spending preferences were changed. |
 
 Each subsequent task updates this ledger and the task board before its PR. Exact current-head review and merge evidence also lives in the linked GitHub PR/issue to avoid self-referential commit hashes in this file.
+
+T01 started from merged main `473515251b40559d4b88463370ab895ec1c1e7e3` on `test/isolated-verification`; parent #5 and smaller issues #6–#9 were created before implementation. Starting the installed Docker Desktop restored daemon access without resetting volumes. The existing disposable backend harness passed all 19 tests and cleaned its database; the historical failed-run database was preserved. Historical failure cause remains unproven. T01.2 hardens isolation and failure handling next.
