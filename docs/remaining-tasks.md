@@ -125,8 +125,8 @@ Problem: the test named for late prospective publication currently fails earlier
 | --- | --- |
 | T04.1 [#25](https://github.com/tazwar9t62/YureAtlas/issues/25): prospective receipt and publication boundaries | Implemented in `80a7a98`: 335 unit + all 95 PostGIS tests, populated migrations, lint/types/contracts passed |
 | T04.2 [#26](https://github.com/tazwar9t62/YureAtlas/issues/26): fitted windows and saved metadata | Implemented in `3c777d7`: 335 unit + all 102 PostGIS tests, lint/types/contracts passed |
-| T04.3 [#27](https://github.com/tazwar9t62/YureAtlas/issues/27): chronological training and artifact round trips | Implemented; 402 unit + all 105 PostGIS tests, lint/types/contracts passed; commit recorded in the issue |
-| T04.4 [#28](https://github.com/tazwar9t62/YureAtlas/issues/28): ETAS mathematics, simulation and failure paths | Planned |
+| T04.3 [#27](https://github.com/tazwar9t62/YureAtlas/issues/27): chronological training and artifact round trips | Implemented in `cae36db`: 402 unit + all 105 PostGIS tests, lint/types/contracts passed |
+| T04.4 [#28](https://github.com/tazwar9t62/YureAtlas/issues/28): ETAS mathematics, simulation and failure paths | Implemented; 536 unit + all 107 PostGIS tests, lint/types/contracts passed; commit recorded in the issue |
 | T04.5 [#29](https://github.com/tazwar9t62/YureAtlas/issues/29): scientific scope and evidence | Planned |
 
 - **T04.1 — Test actual prospective boundaries.** Require eligible receipt-time snapshots and coverage as of the declared input cutoff; reject unavailable artifacts, invalid future cutoffs, late starts, and computations crossing the publication deadline. A successful retry must not duplicate publication.
