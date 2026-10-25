@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from contextlib import nullcontext
 from datetime import timedelta
 from types import SimpleNamespace
 from uuid import uuid4
@@ -188,6 +189,7 @@ def test_detail_active_time_budget_rejects_late_response_and_caps_timeout(provid
 @pytest.fixture
 def ingest_environment(monkeypatch):
     state = SimpleNamespace(known=[], overflow=False, receipts=[], order=[])
+    monkeypatch.setattr(ingestion, "usgs_attempt", lambda _: nullcontext(None))
     grid = StudyGrid(west=140, east=142, south=35, north=37)
     monkeypatch.setattr(
         ingestion, "load_experiment", lambda _: (SimpleNamespace(source_id="source", config=CONFIG), grid)
@@ -197,7 +199,18 @@ def ingest_environment(monkeypatch):
         state.order.append("known")
         return state.known[:], state.overflow
 
-    def persist(source, records, start, end, report, *, status, received_at=None, discovery_context=None):
+    def persist(
+        source,
+        records,
+        start,
+        end,
+        report,
+        *,
+        status,
+        received_at=None,
+        discovery_context=None,
+        attempt_owner=None,
+    ):
         if discovery_context is not None:
             records = [
                 r

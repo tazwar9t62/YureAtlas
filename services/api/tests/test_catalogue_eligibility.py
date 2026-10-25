@@ -1,6 +1,6 @@
 """Corrections must survive discovery filters and never revive older selections."""
 
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from datetime import timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -148,6 +148,7 @@ def test_local_csv_import_preserves_all_candidates_until_locked_persistence(grid
 
 
 def test_feed_keeps_known_reclassification_without_discovering_explosions(grid, known_lookup, monkeypatch):
+    monkeypatch.setattr(ingestion, "usgs_attempt", lambda _: nullcontext(None))
     rows = [record("known", event_type="explosion"), record("foreign", event_type="explosion")]
     monkeypatch.setattr(
         ingestion,

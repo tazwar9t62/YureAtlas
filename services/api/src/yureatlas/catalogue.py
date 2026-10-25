@@ -17,6 +17,7 @@ from .db import transaction
 from .eligibility import eligible_cell, field
 from .grid import StudyGrid
 from .schemas import ExperimentSpec
+from .source_locks import verify_usgs_writer
 from .tables import (
     Cell,
     Event,
@@ -279,6 +280,7 @@ def ingest_records(
     *,
     import_identity: dict | None = None,
     discovery_context: dict | None = None,
+    attempt_owner=None,
 ) -> dict:
     receipt = received_at or now()
     delivery_versions = {}
@@ -300,6 +302,10 @@ def ingest_records(
         source = s.get(Source, source_id)
         if source is None:
             raise ValueError("Unknown catalogue source")
+        if source.provider == "usgs":
+            verify_usgs_writer(s, source_id, attempt_owner)
+        elif attempt_owner is not None:
+            raise ValueError("USGS attempt ownership cannot authorize another provider")
         manifest_values = None
         if import_identity is not None:
             if status == "complete" and import_identity.get("coverage_declared") is not True:

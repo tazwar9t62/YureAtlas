@@ -9,6 +9,7 @@ from .db import transaction
 from .jobs import Cancelled
 from .providers import USGS, RetrievalBudgetExceeded
 from .schemas import ExperimentSpec
+from .source_locks import usgs_attempt
 from .tables import Event, Revision, now
 from .timeutil import utc
 
@@ -44,6 +45,11 @@ def ingest_usgs(experiment_id, start, end, progress=lambda p: None, use_feed=Fal
         raise ValueError("USGS refresh only accepts a USGS experiment")
     if end > now() or start >= end:
         raise ValueError("Ingestion requires a completed ordered interval")
+    with usgs_attempt(experiment.source_id) as owner:
+        return _ingest_usgs(experiment, grid, start, end, progress, use_feed, owner)
+
+
+def _ingest_usgs(experiment, grid, start, end, progress, use_feed, owner):
     fraction = 0.0
     provider = USGS(progress=lambda: progress(fraction))
     totals = {
@@ -71,6 +77,7 @@ def ingest_usgs(experiment_id, start, end, progress=lambda p: None, use_feed=Fal
             status=status,
             received_at=received_at,
             discovery_context=selection,
+            attempt_owner=owner,
         )
         totals["added"] += result["added"]
         totals["duplicate"] += result["duplicate"]

@@ -69,6 +69,8 @@ jobs:
         run: make test-unit 2>&1 | tee verification-logs/unit.log
       - name: Owned PostGIS integration checks
         run: make test-integration 2>&1 | tee verification-logs/integration.log
+      - name: Populated archive migration checks
+        run: make test-migrations 2>&1 | tee verification-logs/migrations.log
       - name: TypeScript
         run: make typecheck 2>&1 | tee verification-logs/typecheck.log
       - name: Read-only contract checks

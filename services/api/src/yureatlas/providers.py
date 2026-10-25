@@ -192,7 +192,7 @@ class USGS:
         }
 
     @staticmethod
-    def collection(payload):
+    def collection(payload, *, expected_count=None):
         if (
             not isinstance(payload, dict)
             or payload.get("type") != "FeatureCollection"
@@ -200,9 +200,14 @@ class USGS:
             or not isinstance(payload.get("metadata"), dict)
         ):
             raise ValueError("Expected a USGS FeatureCollection with explicit metadata")
-        count = payload["metadata"].get("count")
+        # FDSN query responses can omit metadata.count (observed API 2.8.2).
+        # They are accepted only against the independently verified preflight
+        # count. Summary feeds have no such preflight and must provide a count.
+        count = payload["metadata"].get("count", expected_count)
         if isinstance(count, bool) or not isinstance(count, int) or count != len(payload["features"]):
             raise ValueError("USGS response count does not match its feature array")
+        if expected_count is not None and count != expected_count:
+            raise ValueError("USGS response differs from its preflight count")
         return payload
 
     def retrieve(self, start, end, bounds, minimum):
@@ -235,7 +240,7 @@ class USGS:
         payload = (
             {"type": "FeatureCollection", "features": [], "metadata": {"count": 0}}
             if response.status_code == 204
-            else self.collection(response.json())
+            else self.collection(response.json(), expected_count=count)
         )
         response_evidence = self.requests[-1]
         actual = len(payload["features"])
@@ -444,9 +449,15 @@ def parse_jma(data: bytes, namespace: str):
             issues = []
             if line[0] not in {"J", "U", "I"}:
                 issues.append(("unknown_agency", "Unknown JMA agency code"))
-            if line[60] not in {"1", "2", "3", "4", "5"}:
+            # Official U/I rows may leave JMA precision/subsidiary fields blank.
+            # Their explicit foreign agency already proves policy exclusion;
+            # core time, coordinates and magnitude still must parse correctly.
+            foreign_agency = line[0] in {"U", "I"}
+            if line[60] not in {"1", "2", "3", "4", "5"} and not (foreign_agency and line[60] == " "):
                 issues.append(("unknown_event_code", "Unknown JMA subsidiary event code"))
-            if line[59] not in {"1", "2", "3", "4", "5", "7", "8", "9", "M"}:
+            if line[59] not in {"1", "2", "3", "4", "5", "7", "8", "9", "M"} and not (
+                foreign_agency and line[59] == " "
+            ):
                 issues.append(("unknown_quality_code", "Unknown JMA hypocentre precision code"))
             elif line[59] == "8":
                 issues.append(("unaccepted_hypocentre", "Unaccepted hypocentre"))
@@ -477,7 +488,12 @@ def parse_jma(data: bytes, namespace: str):
                 minute = fixed_decimal(minutes, 2)
                 if not 0 <= minute < 60:
                     raise ValueError("Coordinate minutes must be in [0,60); overflow is not normalized")
-                degree = int(degrees)
+                degree_text = degrees.strip()
+                if degree_text[:1] in {"-", "+"}:
+                    # The official file uses padded signed fields such as '- 7'
+                    # and '- 0'. Preserve the sign even for zero whole degrees.
+                    degree_text = degree_text[0] + degree_text[1:].lstrip()
+                degree = int(degree_text)
                 coordinates.append(
                     (-1 if degrees.strip().startswith("-") else 1) * (abs(degree) + minute / 60)
                 )

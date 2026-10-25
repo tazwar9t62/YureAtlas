@@ -19,6 +19,7 @@ Use Python 3.12.12 (`.python-version`), Node 24.21.0 (`.nvmrc`) and pnpm 10.33.0
 | `make lint` | Python lint, without a database |
 | `make test-unit` | Unit/scientific fixtures and test-harness failure checks, without a database |
 | `make test-integration` | Creates, migrates and removes an owned temporary PostGIS database and artifact directory |
+| `make test-migrations` | Seeds a separate owned schema002 archive and verifies forward upgrades preserve its rows, hashes, artifacts and constraints |
 | `make test` | Both backend suites; does not target a running browser/research instance |
 | `make typecheck` | TypeScript, without writing incremental build state |
 | `make contract-check` | Checks OpenAPI and generated TypeScript drift without rewriting either file |
