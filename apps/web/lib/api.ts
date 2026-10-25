@@ -7,6 +7,7 @@ export type Forecast = components["schemas"]["ForecastView"];
 export type Model = components["schemas"]["ModelView"];
 export type Job = components["schemas"]["JobView"];
 export type Evaluation = components["schemas"]["EvaluationView"];
+export type MetricReport = components["schemas"]["MetricReport"];
 export interface Scores {
   n: number;
   missing: number;
@@ -21,13 +22,15 @@ export interface Scores {
   precision: number | null;
   red_coverage: number | null;
   average_precision?: number | null;
-  calibration?: {
-    lower: number;
-    upper: number;
-    count: number;
-    predicted: number | null;
-    observed: number | null;
-  }[];
+  calibration?:
+    | {
+        lower: number;
+        upper: number;
+        count: number;
+        predicted: number | null;
+        observed: number | null;
+      }[]
+    | null;
 }
 export interface MapData {
   cells: GeoJSON.FeatureCollection<GeoJSON.Polygon>;
@@ -48,30 +51,6 @@ export interface CellDetail {
   observed_count: number | null;
   outcome: string;
   history: { start: string; probability: number }[];
-}
-export interface MetricReport {
-  mode: string;
-  days: number;
-  matching_policy: string;
-  series: {
-    date: string;
-    forecast_id: string;
-    model_id: string;
-    algorithm: string;
-    status: string;
-    metrics: Scores;
-    evaluation_version: number;
-  }[];
-  comparisons: {
-    model_id: string;
-    algorithm: string;
-    metrics: Scores;
-    paired_metrics: Scores;
-    brier_skill: number | null;
-    paired_days: number;
-    excluded_days: number;
-    uncertainty: { status: string; interval95?: number[]; reason?: string };
-  }[];
 }
 export interface SourceReport {
   sources: {
