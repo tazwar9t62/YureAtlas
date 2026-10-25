@@ -11,6 +11,7 @@ from sqlalchemy import insert, select, text
 from .artifacts import digest, put, read
 from .catalogue import event_arrays, has_coverage, load_experiment, make_snapshot
 from .db import transaction
+from .eligibility import eligible_cell
 from .metrics import score
 from .rate import HistoricalRate
 from .tables import Evaluation, EvaluationCell, Forecast, ForecastCell, Model, Snapshot, now, uid
@@ -76,7 +77,7 @@ def code_provenance():
 def train_rate(experiment_id, cutoff, history_start=None):
     experiment, grid = load_experiment(experiment_id)
     snapshot, rows = make_snapshot(experiment.source_id, now(), "retrospective_revised", origin_before=cutoff)
-    events = event_arrays(rows, grid, experiment.config["input_magnitude"])
+    events = event_arrays(rows, grid, experiment.config)
     if len(events["t"]) < 5:
         return save_model(
             experiment,
@@ -141,7 +142,7 @@ def issue_forecast(
     snapshot_cutoff = cutoff if mode == "prospective" else now()
     snapshot, rows = make_snapshot(experiment.source_id, snapshot_cutoff, mode, origin_before=cutoff)
     rows = [r for r in rows if r.origin_time < cutoff]
-    events = event_arrays(rows, grid, experiment.config["input_magnitude"])
+    events = event_arrays(rows, grid, experiment.config)
     artifact = load_model(model)
     if isinstance(artifact, HistoricalRate):
         probabilities = artifact.predict()
@@ -250,11 +251,10 @@ def evaluate_forecast(forecast_id, *, asof=None):
         }
         counts = np.zeros(len(grid.ids), dtype=int)
         for event in rows:
-            if (
-                forecast.start <= event.origin_time < forecast.end
-                and event.magnitude >= experiment.config["target_magnitude"]
-            ):
-                cell = grid.assign(event.longitude, event.latitude)
+            if forecast.start <= event.origin_time < forecast.end:
+                cell = eligible_cell(
+                    event, grid, experiment.config, minimum=experiment.config["target_magnitude"]
+                )
                 if cell is not None:
                     counts[grid.lookup[cell]] += 1
         probabilities = np.array([cells[c].probability for c in grid.ids])

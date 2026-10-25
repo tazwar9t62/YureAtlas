@@ -10,6 +10,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from .artifacts import canonical, digest, put
 from .db import transaction
+from .eligibility import eligible_cell, field
 from .grid import StudyGrid
 from .schemas import ExperimentSpec
 from .tables import Cell, Event, Experiment, Grid, Ingestion, Revision, Snapshot, Source, now, uid
@@ -19,6 +20,65 @@ ATTRIBUTION = {
     "jma": "Japan Meteorological Agency, Seismological Bulletin of Japan · JMA magnitude family",
     "synthetic": "YureAtlas deterministic artificial data · no historical or physical interpretation",
 }
+REVISION_FIELDS = (
+    "origin_time",
+    "provider_updated",
+    "longitude",
+    "latitude",
+    "depth_km",
+    "magnitude",
+    "magnitude_type",
+    "status",
+)
+
+
+def revision_values(record):
+    return {key: field(record, key) for key in REVISION_FIELDS}
+
+
+def revision_content_hash(record, *, supersedes=None):
+    """Hash normalized content; pass stored hash_parent_id to verify a linked row.
+
+    The default deliberately ignores a row's parent when comparing its content
+    with a redelivery. Legacy default earthquakes retain the original recipe.
+    """
+    values = revision_values(record)
+    event_type = field(record, "event_type", "earthquake")
+    reason = field(record, "selection_reason")
+    if event_type == "earthquake" and reason is None and supersedes is None:
+        return digest(values)  # Preserve the original hash recipe on legacy redelivery.
+    return digest(
+        {
+            "version": 2,
+            "values": values,
+            "event_type": event_type,
+            "selection_reason": reason,
+            "supersedes": supersedes,
+        }
+    )
+
+
+def discovery_and_corrections(source_id, records, grid, config):
+    """Keep eligible discoveries and valid corrections to already-known IDs.
+
+    A line can leave the selection without deleting the event. An absent line
+    supplies no correction. Chunk ID lookups for large official catalogue files.
+    """
+    discovered = {r["provider_id"] for r in records if eligible_cell(r, grid, config) is not None}
+    candidates = sorted({r["provider_id"] for r in records} - discovered)
+    known = set(discovered)
+    if candidates:
+        with transaction() as s:
+            for offset in range(0, len(candidates), 1000):
+                known.update(
+                    s.scalars(
+                        select(Event.provider_id).where(
+                            Event.source_id == source_id,
+                            Event.provider_id.in_(candidates[offset : offset + 1000]),
+                        )
+                    )
+                )
+    return [r for r in records if r["provider_id"] in known]
 
 
 def ensure_experiment(spec: ExperimentSpec) -> Experiment:
@@ -91,17 +151,58 @@ def ingest_records(
     status="complete",
 ) -> dict:
     receipt = received_at or now()
+    delivery_versions = {}
+    for record in records:
+        version = (record["provider_id"], record.get("provider_updated"))
+        checksum = revision_content_hash(record)
+        if version in delivery_versions and delivery_versions[version] != checksum:
+            raise ValueError(
+                "Conflicting records for one event/revision in a delivery; "
+                "import ordered revisions separately when provider update times are absent"
+            )
+        delivery_versions[version] = checksum
     added = 0
     duplicate = 0
     with transaction() as s:
         s.execute(
             __import__("sqlalchemy").text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": source_id}
         )
-        ids = [r["provider_id"] for r in records]
-        events = {
-            e.provider_id: e
-            for e in s.scalars(select(Event).where(Event.source_id == source_id, Event.provider_id.in_(ids)))
-        }
+        ids = sorted({r["provider_id"] for r in records})
+        events = {}
+        for offset in range(0, len(ids), 1000):
+            events.update(
+                {
+                    e.provider_id: e
+                    for e in s.scalars(
+                        select(Event).where(
+                            Event.source_id == source_id, Event.provider_id.in_(ids[offset : offset + 1000])
+                        )
+                    )
+                }
+            )
+        # Sources without provider revision times explicitly use receipt ordering.
+        # Compare the latest content so A -> B -> A appends, while A -> A deduplicates.
+        receipt_ids = sorted(
+            {
+                events[r["provider_id"]].id
+                for r in records
+                if r.get("provider_updated") is None and r["provider_id"] in events
+            }
+        )
+        latest = {}
+        for offset in range(0, len(receipt_ids), 1000):
+            rows = s.scalars(
+                select(Revision)
+                .where(Revision.event_id.in_(receipt_ids[offset : offset + 1000]))
+                .distinct(Revision.event_id)
+                .order_by(
+                    Revision.event_id,
+                    func.coalesce(Revision.provider_updated, Revision.received_at).desc(),
+                    Revision.received_at.desc(),
+                    Revision.id.desc(),
+                )
+            )
+            latest.update({r.event_id: r for r in rows})
         for record in records:
             event = events.get(record["provider_id"])
             if not event:
@@ -109,28 +210,33 @@ def ingest_records(
                 s.add(event)
                 s.flush()
                 events[event.provider_id] = event
-            values = {
-                k: record.get(k)
-                for k in (
-                    "origin_time",
-                    "provider_updated",
-                    "longitude",
-                    "latitude",
-                    "depth_km",
-                    "magnitude",
-                    "magnitude_type",
-                    "status",
-                )
-            }
+            values = revision_values(record)
+            event_type = record.get("event_type", "earthquake")
+            selection_reason = record.get("selection_reason")
+            previous = latest.get(event.id)
+            checksum = revision_content_hash(record)
+            hash_parent_id = None
+            if values["provider_updated"] is None and previous is not None:
+                if checksum == revision_content_hash(previous):
+                    duplicate += 1
+                    continue
+                # Linking the preceding immutable revision also distinguishes a
+                # return to older content from its original receipt-time version.
+                hash_parent_id = field(previous, "id")
+                checksum = revision_content_hash(record, supersedes=hash_parent_id)
             raw_ref = put(canonical(record.get("raw", record)), "json")
+            revision_id = uid()
             inserted = s.execute(
                 insert(Revision)
                 .values(
-                    id=uid(),
+                    id=revision_id,
                     created_at=receipt,
                     event_id=event.id,
                     received_at=receipt,
-                    content_hash=digest(values),
+                    content_hash=checksum,
+                    event_type=event_type,
+                    selection_reason=selection_reason,
+                    hash_parent_id=hash_parent_id,
                     raw_ref=raw_ref,
                     location=from_shape(Point(values["longitude"], values["latitude"]), srid=4326),
                     **values,
@@ -140,6 +246,25 @@ def ingest_records(
             ).scalar_one_or_none()
             added += int(inserted is not None)
             duplicate += int(inserted is None)
+            if inserted is not None:
+                incoming_order = (values["provider_updated"] or receipt, receipt, revision_id)
+                previous_order = (
+                    (
+                        field(previous, "provider_updated") or field(previous, "received_at"),
+                        field(previous, "received_at"),
+                        field(previous, "id"),
+                    )
+                    if previous is not None
+                    else None
+                )
+                if previous_order is None or incoming_order > previous_order:
+                    latest[event.id] = dict(
+                        values,
+                        id=revision_id,
+                        received_at=receipt,
+                        event_type=event_type,
+                        selection_reason=selection_reason,
+                    )
         final_report = dict(report, added=added, duplicate=duplicate, received_at=receipt.isoformat())
         s.add(
             Ingestion(
@@ -253,8 +378,8 @@ def has_coverage(source_id: str, start: datetime, end: datetime, cutoff: datetim
     return False
 
 
-def event_arrays(rows, grid: StudyGrid, min_magnitude: float):
-    eligible = [(r, grid.assign(r.longitude, r.latitude)) for r in rows if r.magnitude >= min_magnitude]
+def event_arrays(rows, grid: StudyGrid, config: dict):
+    eligible = [(r, eligible_cell(r, grid, config)) for r in rows]
     eligible = [(r, cell) for r, cell in eligible if cell is not None]
     return {
         "t": np.array([r.origin_time.timestamp() / 86400 for r, _ in eligible]),

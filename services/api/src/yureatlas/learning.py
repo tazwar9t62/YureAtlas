@@ -47,7 +47,7 @@ def train_suite(
         "grouping": "all cells on a date stay together",
     }
     snapshot, rows = make_snapshot(experiment.source_id, now(), "retrospective_revised", origin_before=cutoff)
-    events = event_arrays(rows, grid, experiment.config["input_magnitude"])
+    events = event_arrays(rows, grid, experiment.config)
     target = experiment.config["target_magnitude"]
     common = {
         "feature_schema": SCHEMA,

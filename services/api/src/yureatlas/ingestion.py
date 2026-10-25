@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-from .catalogue import ensure_experiment, ingest_records, load_experiment
+from .catalogue import discovery_and_corrections, ensure_experiment, ingest_records, load_experiment
 from .db import transaction
 from .providers import USGS
 from .schemas import ExperimentSpec
@@ -17,12 +17,7 @@ def ingest_usgs(experiment_id, start, end, progress=lambda p: None, use_feed=Fal
     totals = {"added": 0, "duplicate": 0, "chunks": 0, "rejected": 0}
     if use_feed:
         (records, rejected), raw = provider.feed()
-        records = [
-            r
-            for r in records
-            if grid.assign(r["longitude"], r["latitude"]) is not None
-            and r["magnitude"] >= experiment.config["input_magnitude"]
-        ]
+        records = discovery_and_corrections(experiment.source_id, records, grid, experiment.config)
         ingest_records(
             experiment.source_id,
             records,
@@ -40,6 +35,7 @@ def ingest_usgs(experiment_id, start, end, progress=lambda p: None, use_feed=Fal
             ):
                 # Invalid records mean usable negatives cannot be guaranteed.
                 status = "complete" if not report["rejected_count"] else "partial"
+                records = discovery_and_corrections(experiment.source_id, records, grid, experiment.config)
                 result = ingest_records(experiment.source_id, records, a, b, report, status=status)
                 totals["added"] += result["added"]
                 totals["duplicate"] += result["duplicate"]

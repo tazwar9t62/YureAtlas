@@ -3,7 +3,7 @@ from datetime import timedelta
 from sqlalchemy import select
 
 from .archive import evaluate_forecast, issue_forecast
-from .catalogue import ingest_records, load_experiment
+from .catalogue import discovery_and_corrections, ingest_records, load_experiment
 from .db import transaction
 from .demo import DEMO_TEST_START, seed_catalogue
 from .ingestion import ingest_usgs, real_experiment
@@ -88,14 +88,13 @@ def execute(kind, payload, progress):
             if payload["format"] == "jma"
             else parse_csv(raw, payload.get("mapping"))
         )
-        rows = [
-            r
-            for r in rows
-            if r["magnitude_type"] in "JDdVv"
-            and r["magnitude"] >= experiment.config["input_magnitude"]
-            and grid.assign(r["longitude"], r["latitude"]) is not None
-        ]
-        report["selected_in_domain"] = len(rows)
+        from .eligibility import eligible_cell
+
+        report["selected_in_domain"] = sum(
+            eligible_cell(r, grid, experiment.config) is not None for r in rows
+        )
+        rows = discovery_and_corrections(experiment.source_id, rows, grid, experiment.config)
+        report["persisted_candidates"] = len(rows)
         report["raw_ref"] = payload["artifact"]
         report["coverage_policy"] = (
             "User-declared official file interval; rejected rows prevent negative labels"

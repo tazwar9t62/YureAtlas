@@ -10,6 +10,7 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 from . import tables as t
 from .config import settings
 from .db import engine, transaction
+from .eligibility import eligible_cell
 from .schemas import (
     EvaluationView,
     ExperimentSpec,
@@ -195,7 +196,8 @@ def forecast_map(forecast_id: str) -> dict:
                     },
                 }
                 for r in rows
-                if grid.assign(r.longitude, r.latitude) is not None
+                if eligible_cell(r, grid, experiment.config, minimum=experiment.config["target_magnitude"])
+                is not None
             ]
         return {
             "cells": {"type": "FeatureCollection", "features": features},
@@ -400,10 +402,9 @@ def events(
     rows = [
         r
         for r in revisions_asof(experiment.source_id, t.now())
-        if r.magnitude >= min_magnitude
+        if eligible_cell(r, grid, experiment.config, minimum=min_magnitude) is not None
         and (not start or r.origin_time >= utc(start))
         and (not end or r.origin_time < utc(end))
-        and grid.assign(r.longitude, r.latitude) is not None
     ]
     return {
         "total": len(rows),
@@ -427,6 +428,9 @@ def revision_view(r):
             "magnitude",
             "magnitude_type",
             "status",
+            "event_type",
+            "selection_reason",
+            "hash_parent_id",
             "raw_ref",
         )
     }

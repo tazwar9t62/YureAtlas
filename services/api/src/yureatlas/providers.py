@@ -10,6 +10,7 @@ from typing import Protocol
 import httpx
 
 from .artifacts import put
+from .eligibility import JMA_MAGNITUDE_TYPES
 from .timeutil import JST, utc
 
 
@@ -35,6 +36,10 @@ def validate_record(record):
         record["provider_updated"] = utc(record["provider_updated"])
     if not record["provider_id"] or not record["magnitude_type"]:
         raise ValueError("Missing event ID or magnitude type")
+    if not isinstance(record.get("event_type", "earthquake"), str) or not record.get(
+        "event_type", "earthquake"
+    ):
+        raise ValueError("Missing event type")
     return record
 
 
@@ -124,8 +129,6 @@ class USGS:
         for feature in payload.get("features", []):
             try:
                 properties = feature["properties"]
-                if properties.get("type") != "earthquake":
-                    raise ValueError("Not an earthquake")
                 coordinates = feature["geometry"]["coordinates"]
                 record = {
                     "provider_id": feature["id"],
@@ -141,6 +144,7 @@ class USGS:
                     "magnitude": float(properties["mag"]),
                     "magnitude_type": properties.get("magType") or "unknown_preferred",
                     "status": properties.get("status", "reviewed"),
+                    "event_type": properties.get("type"),
                     "raw": feature,
                 }
                 accepted.append(validate_record(record))
@@ -177,20 +181,31 @@ def parse_jma(data: bytes, namespace: str):
             if len(raw) != 96:
                 raise ValueError("Expected a 96-byte JMA hypocentre record")
             line = raw.decode("ascii")
-            if line[0] != "J" or line[60] not in {"1", "2", "5"}:
-                raise ValueError("Not a JMA natural earthquake")
+            selection_reason = (
+                "Not a JMA natural earthquake" if line[0] != "J" or line[60] not in {"1", "2", "5"} else None
+            )
             if line[59] == "8":
-                raise ValueError("Unaccepted hypocentre")
+                selection_reason = selection_reason or "Unaccepted hypocentre"
             chosen = next(
                 (
                     (line[a : a + 2], line[a + 2])
                     for a in (52, 55)
-                    if line[a + 2] in "JDdVv" and line[a : a + 2].strip()
+                    if line[a + 2] in JMA_MAGNITUDE_TYPES and line[a : a + 2].strip()
                 ),
                 None,
             )
             if not chosen:
-                raise ValueError("No usable JMA magnitude family; Mw/mb/Ms excluded")
+                selection_reason = selection_reason or "No usable JMA magnitude family; Mw/mb/Ms excluded"
+                chosen = next(
+                    (
+                        (line[a : a + 2], line[a + 2])
+                        for a in (52, 55)
+                        if line[a : a + 2].strip() and line[a + 2].strip()
+                    ),
+                    None,
+                )
+                if not chosen:
+                    raise ValueError("No usable magnitude")
             origin = datetime.strptime(line[1:13], "%Y%m%d%H%M").replace(tzinfo=JST) + timedelta(
                 seconds=fixed_decimal(line[13:17], 2)
             )
@@ -204,13 +219,20 @@ def parse_jma(data: bytes, namespace: str):
                 "magnitude": jma_magnitude(chosen[0]),
                 "magnitude_type": chosen[1],
                 "status": "reviewed",
+                "event_type": "earthquake" if line[60] in {"1", "2", "5"} else "non_earthquake",
+                "selection_reason": selection_reason,
                 "raw": {"line": line, "namespace": namespace, "line_number": number},
             }
             accepted.append(validate_record(record))
+            if selection_reason:
+                # Retain valid correction evidence without relaxing the existing
+                # conservative coverage policy; exclusion reporting is separate work.
+                rejected.append({"line": number, "reason": selection_reason})
         except (ValueError, UnicodeDecodeError, IndexError) as exc:
             rejected.append({"line": number, "reason": str(exc)})
     return accepted, {
-        "accepted": len(accepted),
+        "accepted": sum(r.get("selection_reason") is None for r in accepted),
+        "retained_corrections": sum(r.get("selection_reason") is not None for r in accepted),
         "rejected_count": len(rejected),
         "rejected": rejected[:100],
         "identity_policy": "stable file namespace + line number; reordered files require new namespace",
@@ -234,6 +256,7 @@ def parse_csv(data: bytes, mapping: dict | None = None):
                 "magnitude": float(row["magnitude"]),
                 "magnitude_type": row["magnitude_type"],
                 "status": row.get("status") or "reviewed",
+                "event_type": row.get("event_type") or "earthquake",
                 "raw": raw,
             }
             accepted.append(validate_record(record))

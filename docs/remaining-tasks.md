@@ -36,8 +36,8 @@ Dependencies below are in addition to the sequential merge rule. Branch names ar
 | ID | Main task | Depends on | Status | Branch | GitHub / PR |
 | --- | --- | --- | --- | --- | --- |
 | T00 | Backlog, traceability, and review guidance | — | Merged | `chore/completion-plan` | [#1](https://github.com/tazwar9t62/YureAtlas/issues/1) / [PR #4](https://github.com/tazwar9t62/YureAtlas/pull/4) |
-| T01 | Reliable isolated backend checks and CI foundation | T00 | In review | `test/isolated-verification` | [#5](https://github.com/tazwar9t62/YureAtlas/issues/5) / [PR #10](https://github.com/tazwar9t62/YureAtlas/pull/10) |
-| T02 | Catalogue revisions and import coverage correctness | T01 | Planned | `fix/catalogue-reconciliation` | Not created |
+| T01 | Reliable isolated backend checks and CI foundation | T00 | Merged | `test/isolated-verification` | [#5](https://github.com/tazwar9t62/YureAtlas/issues/5) / [PR #10](https://github.com/tazwar9t62/YureAtlas/pull/10) |
+| T02 | Catalogue revisions and import coverage correctness | T01 | In progress | `fix/catalogue-reconciliation` | [#11](https://github.com/tazwar9t62/YureAtlas/issues/11); PR pending |
 | T03 | Deterministic baseline comparisons and report scope | T02 | Planned | `fix/comparison-provenance` | Not created |
 | T04 | Prospective timing, model partitions, and scientific checks | T02, T03 | Planned | `test/scientific-invariants` | Not created |
 | T05 | Worker scheduling, recovery, and operational readiness | T01, T04 | Planned | `fix/worker-recovery` | Not created |
@@ -70,7 +70,7 @@ Problem: the latest checkpoint database suite failed during setup/cleanup; test 
 | T01.1 [#6](https://github.com/tazwar9t62/YureAtlas/issues/6): environment diagnosis | Implemented in `43ca83a`: fresh isolated baseline 19 passed; [diagnosis](verification.md#2026-10-25-database-diagnosis-t011) |
 | T01.2 [#7](https://github.com/tazwar9t62/YureAtlas/issues/7): owned isolation and cleanup | Implemented in `62b815b`: 47 unit checks and all 4 PostGIS checks passed; ownership, failure and real descendant-process regressions included |
 | T01.3 [#8](https://github.com/tazwar9t62/YureAtlas/issues/8): independent verification commands | Implemented in `e9a4139`: lint, 47 unit + 4 PostGIS checks, TypeScript and read-only contracts passed; Webpack production build passed; local Turbopack worker-port restriction remains |
-| T01.4 [#9](https://github.com/tazwar9t62/YureAtlas/issues/9): isolated CI | Implemented in `21cd3d0`: bounded Ubuntu/PostGIS workflow with immutable action/image pins; Actionlint passed; first PR run pending |
+| T01.4 [#9](https://github.com/tazwar9t62/YureAtlas/issues/9): isolated CI | Merged in PR #10: [CI passed](https://github.com/tazwar9t62/YureAtlas/actions/runs/40166584195), including the default production build |
 
 - **T01.1 — Diagnose the database environment.** Check the installed Docker daemon and PostGIS health, resource limits, and preserved volumes. Start the existing Docker application if needed. Use a uniquely named disposable database to reproduce setup failures; inspect server logs before changing limits. Record the cause or precise environment limitation. Preserve the primary database and artifacts.
 - **T01.2 — Harden test isolation and cleanup.** Use the running supported Python interpreter, explicit database/artifact ownership, and cleanup that preserves the original failure. Cover migration/test/cleanup failure paths. Remove only resources created by the current test run; report any remnants.
@@ -82,6 +82,13 @@ Acceptance: all existing backend tests pass against disposable PostGIS; setup fa
 ## T02 — Catalogue revisions and import coverage
 
 Problem: eligibility filters can discard disqualifying updates before persistence, leaving older earthquake positives authoritative. JMA policy exclusions also make otherwise useful official files entirely partial.
+
+| Smaller issue | Status / evidence |
+| --- | --- |
+| T02.1 [#12](https://github.com/tazwar9t62/YureAtlas/issues/12): corrections before eligibility filtering | Implemented: 67 unit and all 11 PostGIS checks passed; lint and read-only contracts passed |
+| T02.2 [#13](https://github.com/tazwar9t62/YureAtlas/issues/13): known-ID USGS reconciliation | Planned |
+| T02.3 [#14](https://github.com/tazwar9t62/YureAtlas/issues/14): JMA exclusions and import identity | Planned |
+| T02.4 [#15](https://github.com/tazwar9t62/YureAtlas/issues/15): append-only correction acceptance | Planned |
 
 - **T02.1 — Preserve known-event corrections.** Separate discovery eligibility from revision persistence for local imports and feeds. Save authoritative updates to known IDs even when magnitude/location/type changes disqualify them; choose the latest revision before applying experiment filters. Do not infer deletion from absence.
 - **T02.2 — Reconcile known USGS IDs.** Confirm current official event-service semantics and use bounded requests that retrieve changes beyond discovery magnitude/domain/time filters. Handle explicit deletions and malformed/failed responses conservatively. Record raw evidence, receipt times, request limits, and failures.
@@ -225,4 +232,10 @@ T01.3 adds independent documented Make targets, supported toolchain checks, read
 
 T01.4 adds PR/main CI using the same commands, a digest-pinned official PostGIS service, exact tool versions, full-commit action pins, read-only repository permissions, a 20-minute job bound, and seven-day failure logs. Unit checks use an unreachable database URL. Actionlint 1.7.12 passed. The PR's actual CI result and completed Codex review remain required before merge; this workflow does not yet run the T07 browser checks.
 
-T01 opened as [PR #10](https://github.com/tazwar9t62/YureAtlas/pull/10). Supplementary review confirmed the workflow and read-only contract behavior; a clean-checkout TypeScript simulation also passed without generated `.next` files. Overall Codex review and CI are pending; T02 has not started.
+T01 opened as [PR #10](https://github.com/tazwar9t62/YureAtlas/pull/10). Supplementary review confirmed the workflow and read-only contract behavior; a clean-checkout TypeScript simulation also passed without generated `.next` files. At opening, overall Codex review and CI were pending and T02 had not started.
+
+T01 subsequently cleared [Codex review without findings](https://github.com/tazwar9t62/YureAtlas/pull/10#issuecomment-6394059080) at `b81844ab533361733f3d14d952f5caf7dac1c36b` and [CI](https://github.com/tazwar9t62/YureAtlas/actions/runs/40166584195): 47 unit checks, all 4 PostGIS checks, lint, TypeScript, contracts and the default production build passed. GitGuardian's neutral alert concerned only the disposable CI database password; [its test-only scope is documented](https://github.com/tazwar9t62/YureAtlas/pull/10#issuecomment-6394055058). With no outstanding review threads, PR #10 merged as `38ae8d76d3a5d91d9acaec70eeb99fcaecc289bb`.
+
+T02 started from that updated main on `fix/catalogue-reconciliation`. Parent #11 and smaller issues #12–#15 were created before implementation. Work starts with preserving known-event corrections and applying eligibility only after authoritative revision selection.
+
+T02.1 adds immutable event-type/exclusion evidence with legacy-compatible hashes, preserves valid known-ID corrections before discovery filtering, and applies one eligibility policy after authoritative selection for model inputs, evaluation, maps and event lists. Known-ID lookups are chunked. Sources without provider update times use receipt ordering: A → B → A appends a new revision, and repeating the latest content deduplicates; a later delivery of old content cannot be distinguished from an intentional reversal. Conflicting same-event/same-version rows in one delivery are rejected before writes. The additive migration preserves earlier revisions and snapshots. Verification: 67 unit checks and all 11 owned PostGIS checks passed; lint, whitespace and read-only API contracts passed. JMA exclusion coverage remains conservative until T02.3, and filtered USGS queries still need the T02.2 known-ID refresh.
