@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 from sqlalchemy import func, select, text
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -15,9 +15,11 @@ from .schemas import (
     EvaluationView,
     ExperimentSpec,
     ExperimentView,
+    ForecastMode,
     ForecastView,
     JobRequest,
     JobView,
+    MetricReport,
     ModelView,
 )
 
@@ -447,106 +449,26 @@ def event_revisions(event_id: str) -> list[dict]:
         ]
 
 
-@app.get("/metrics")
-def metrics(experiment_id: str, mode: str, days: int = Query(30, ge=0, le=3650)) -> dict:
-    from collections import defaultdict
+def _metric_report(experiment_id, mode, days, start, end):
+    from .reports import ReportNotFound, ReportTimeout, build_metric_report
 
-    from .comparisons import build_comparison_report
+    try:
+        return build_metric_report(experiment_id, mode, days=days, start=start, end=end)
+    except ReportNotFound as error:
+        raise HTTPException(404, str(error)) from error
+    except ReportTimeout as error:
+        raise HTTPException(503, str(error)) from error
 
-    with transaction() as s:
-        scope = [t.Forecast.experiment_id == experiment_id, t.Forecast.mode == mode]
-        if days:
-            latest = s.scalar(select(func.max(t.Forecast.end)).where(*scope))
-            if latest is not None:
-                scope.append(t.Forecast.start >= latest - timedelta(days=days))
-        query = select(t.Forecast, t.Model).join(t.Model, t.Model.id == t.Forecast.model_id).where(*scope)
-        forecasts = list(s.execute(query))
-        if not forecasts:
-            return {"mode": mode, "days": days, **build_comparison_report([])}
 
-        grid = s.execute(
-            select(t.Grid.id, t.Grid.geometry_hash, t.Experiment.source_id)
-            .join(t.Experiment, t.Experiment.grid_id == t.Grid.id)
-            .where(t.Experiment.id == experiment_id)
-        ).one()
-        grid_ids = set(s.scalars(select(t.Cell.id).where(t.Cell.grid_id == grid.id)))
-        # Select the latest evaluation once in bulk; later evidence reads use
-        # those exact immutable IDs even if another worker appends an evaluation.
-        ranked = (
-            select(
-                t.Evaluation.id,
-                func.row_number()
-                .over(
-                    partition_by=t.Evaluation.forecast_id,
-                    order_by=(
-                        t.Evaluation.version.desc(),
-                        t.Evaluation.created_at.desc(),
-                        t.Evaluation.id.desc(),
-                    ),
-                )
-                .label("position"),
-            )
-            .join(t.Forecast, t.Forecast.id == t.Evaluation.forecast_id)
-            .where(*scope)
-            .subquery()
-        )
-        evaluated = {
-            evaluation.forecast_id: (evaluation, snapshot)
-            for evaluation, snapshot in s.execute(
-                select(t.Evaluation, t.Snapshot)
-                .join(ranked, ranked.c.id == t.Evaluation.id)
-                .outerjoin(t.Snapshot, t.Snapshot.id == t.Evaluation.snapshot_id)
-                .where(ranked.c.position == 1)
-            )
-        }
-        observations, forecast_cells = defaultdict(list), defaultdict(set)
-        evaluation_ids = [evaluation.id for evaluation, _ in evaluated.values()]
-        # Bounded bind batches also keep all-history exports below PostgreSQL's
-        # parameter limit without reverting to per-forecast queries.
-        for offset in range(0, len(evaluation_ids), 1000):
-            for evaluation_id, cell_id, count in s.execute(
-                select(
-                    t.EvaluationCell.evaluation_id, t.EvaluationCell.cell_id, t.EvaluationCell.observed_count
-                ).where(t.EvaluationCell.evaluation_id.in_(evaluation_ids[offset : offset + 1000]))
-            ):
-                observations[evaluation_id].append((cell_id, int(count > 0) if count >= 0 else -1))
-        for forecast_id, cell_id in s.execute(
-            select(t.ForecastCell.forecast_id, t.ForecastCell.cell_id)
-            .join(t.Forecast, t.Forecast.id == t.ForecastCell.forecast_id)
-            .where(*scope)
-        ):
-            forecast_cells[forecast_id].add(cell_id)
-        records = []
-        for f, m in forecasts:
-            e, snapshot = evaluated.get(f.id, (None, None))
-            records.append(
-                {
-                    "forecast_id": f.id,
-                    "forecast_created_at": f.created_at,
-                    "model_id": m.id,
-                    "algorithm": m.algorithm,
-                    "experiment_id": f.experiment_id,
-                    "start": f.start,
-                    "end": f.end,
-                    "mode": f.mode,
-                    "grid_hash": f.provenance.get("grid_hash"),
-                    "grid_cell_ids": grid_ids,
-                    "forecast_cell_ids": forecast_cells[f.id],
-                    "evidence_valid": (
-                        f.provenance.get("grid_hash") == grid.geometry_hash
-                        and m.experiment_id == f.experiment_id
-                        and snapshot is not None
-                        and snapshot.source_id == grid.source_id
-                    ),
-                    "evaluation_id": e.id if e else None,
-                    "evaluation_version": e.version if e else None,
-                    "status": e.status if e else "not_evaluated",
-                    "revision_ids": snapshot.revision_ids if snapshot else None,
-                    "observations": observations[e.id] if e else None,
-                    "metrics": e.metrics if e else None,
-                }
-            )
-        return {"mode": mode, "days": days, **build_comparison_report(records)}
+@app.get("/metrics", response_model=MetricReport)
+def metrics(
+    experiment_id: str,
+    mode: ForecastMode,
+    days: int | None = Query(None, ge=0, le=3650),
+    start: AwareDatetime | None = None,
+    end: AwareDatetime | None = None,
+) -> dict:
+    return _metric_report(experiment_id, mode, days, start, end)
 
 
 def unique_mapping_object(pairs):
@@ -629,9 +551,28 @@ def export_forecast(forecast_id: str):
     )
 
 
-@app.get("/exports/metrics")
-def export_metrics(experiment_id: str, mode: str):
+@app.get("/exports/metrics", response_model=MetricReport)
+def export_metrics(
+    experiment_id: str,
+    mode: ForecastMode,
+    days: int | None = Query(None, ge=0, le=3650),
+    start: AwareDatetime | None = None,
+    end: AwareDatetime | None = None,
+    expected_report_id: str | None = Query(None, pattern=r"^[0-9a-f]{64}$"),
+):
+    report = _metric_report(experiment_id, mode, days, start, end)
+    if expected_report_id is not None and expected_report_id != report["report_id"]:
+        raise HTTPException(
+            409,
+            {
+                "message": "Report content changed; refresh the report or download the already loaded JSON",
+                "expected_report_id": expected_report_id,
+                "current_report_id": report["report_id"],
+            },
+        )
     return JSONResponse(
-        metrics(experiment_id, mode, 0),
-        headers={"Content-Disposition": 'attachment; filename="yureatlas-metrics.json"'},
+        report,
+        headers={
+            "Content-Disposition": f'attachment; filename="yureatlas-metrics-{report["report_id"][:12]}.json"'
+        },
     )

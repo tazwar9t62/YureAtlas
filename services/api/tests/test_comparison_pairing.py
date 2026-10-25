@@ -303,7 +303,17 @@ def archived_comparison():
             )
         return identity
 
-    def publish(*, algorithm="candidate", created_at=PUBLISHED, evaluate=True, **evaluation_changes):
+    def publish(
+        *,
+        algorithm="candidate",
+        created_at=PUBLISHED,
+        evaluate=True,
+        start=START,
+        end=None,
+        mode="synthetic_demo",
+        **evaluation_changes,
+    ):
+        end = start + timedelta(days=1) if end is None else end
         with transaction() as session:
             inputs = snapshot(session)
             model = Model(
@@ -311,8 +321,8 @@ def archived_comparison():
                 experiment_id=experiment.id,
                 algorithm=algorithm,
                 status="available",
-                training_cutoff=START - timedelta(days=1),
-                available_at=START - timedelta(days=1),
+                training_cutoff=start - timedelta(days=1),
+                available_at=start - timedelta(days=1),
                 snapshot_id=inputs.id,
                 metadata_={},
             )
@@ -326,10 +336,10 @@ def archived_comparison():
                 model_id=model.id,
                 snapshot_id=inputs.id,
                 issued_at=created_at,
-                start=START,
-                end=END,
-                input_cutoff=START - timedelta(days=1),
-                mode="synthetic_demo",
+                start=start,
+                end=end,
+                input_cutoff=start - timedelta(days=1),
+                mode=mode,
                 status="published",
                 provenance={"grid_hash": grid.hash},
             )
