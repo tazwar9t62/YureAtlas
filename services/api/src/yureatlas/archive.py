@@ -77,29 +77,71 @@ def code_provenance():
 
 
 def train_rate(experiment_id, cutoff, history_start=None):
+    cutoff = utc(cutoff)
+    history_start = utc(history_start) if history_start is not None else None
     experiment, grid = load_experiment(experiment_id)
     snapshot, rows = make_snapshot(experiment.source_id, now(), "retrospective_revised", origin_before=cutoff)
     events = event_arrays(rows, grid, experiment.config)
-    if len(events["t"]) < 5:
+    target = experiment.config["target_magnitude"]
+    if history_start is None and len(events["t"]):
+        history_start = utc(
+            min(row.origin_time for row in rows if eligible_cell(row, grid, experiment.config) is not None)
+        )
+    fit_window = None
+    fitting_events = 0
+    if history_start is not None:
+        if history_start >= cutoff:
+            raise ValueError("Positive training duration required")
+        fitting_events = int(
+            (
+                (events["t"] >= history_start.timestamp() / 86400)
+                & (events["t"] < cutoff.timestamp() / 86400)
+                & (events["m"] >= target)
+            ).sum()
+        )
+        fit_window = {
+            "start": history_start.isoformat(),
+            "end": cutoff.isoformat(),
+            "duration_days": (cutoff - history_start).total_seconds() / 86400,
+            "role": "target_event_rate_fit",
+            "event_count": fitting_events,
+        }
+    metadata = {
+        "feature_schema": "rate-v1",
+        "selection": "fixed initial settings",
+        "training_recipe": "fixed-rate-window-v2",
+        "training_windows": {
+            "fit": fit_window,
+            "context": None,
+            "selection": None,
+            "calibration": None,
+            "diagnostic": None,
+        },
+        "training_windows_status": "planned_unavailable",
+    }
+    if fitting_events < 5:
         return save_model(
             experiment,
             "historical_rate",
             None,
             cutoff,
             snapshot.id,
-            {"reason": "Insufficient catalogue records"},
+            dict(
+                metadata,
+                reason=f"Insufficient data: at least five target events in the fit window required; received {fitting_events}",
+            ),
             "insufficient_data",
         )
     end = cutoff.timestamp() / 86400
-    start = history_start.timestamp() / 86400 if history_start else float(events["t"].min())
-    artifact = HistoricalRate.fit(events, grid, start, end, experiment.config["target_magnitude"])
+    start = history_start.timestamp() / 86400
+    artifact = HistoricalRate.fit(events, grid, start, end, target)
     return save_model(
         experiment,
         "historical_rate",
         artifact,
         cutoff,
         snapshot.id,
-        dict(artifact.diagnostics, feature_schema="rate-v1", selection="fixed initial settings"),
+        dict(metadata, **artifact.diagnostics, training_windows_status="completed"),
     )
 
 

@@ -123,8 +123,8 @@ Problem: the test named for late prospective publication currently fails earlier
 
 | Smaller issue | Status / evidence |
 | --- | --- |
-| T04.1 [#25](https://github.com/tazwar9t62/YureAtlas/issues/25): prospective receipt and publication boundaries | Implemented in this issue's commit: 335 unit + all 95 PostGIS tests, populated migrations, lint/types/contracts passed |
-| T04.2 [#26](https://github.com/tazwar9t62/YureAtlas/issues/26): fitted windows and saved metadata | Planned |
+| T04.1 [#25](https://github.com/tazwar9t62/YureAtlas/issues/25): prospective receipt and publication boundaries | Implemented in `80a7a98`: 335 unit + all 95 PostGIS tests, populated migrations, lint/types/contracts passed |
+| T04.2 [#26](https://github.com/tazwar9t62/YureAtlas/issues/26): fitted windows and saved metadata | Implemented; 335 unit + all 102 PostGIS tests, lint/types/contracts passed; commit recorded in the issue |
 | T04.3 [#27](https://github.com/tazwar9t62/YureAtlas/issues/27): chronological training and artifact round trips | Planned |
 | T04.4 [#28](https://github.com/tazwar9t62/YureAtlas/issues/28): ETAS mathematics, simulation and failure paths | Planned |
 | T04.5 [#29](https://github.com/tazwar9t62/YureAtlas/issues/29): scientific scope and evidence | Planned |
