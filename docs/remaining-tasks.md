@@ -37,8 +37,8 @@ Dependencies below are in addition to the sequential merge rule. Branch names ar
 | --- | --- | --- | --- | --- | --- |
 | T00 | Backlog, traceability, and review guidance | — | Merged | `chore/completion-plan` | [#1](https://github.com/tazwar9t62/YureAtlas/issues/1) / [PR #4](https://github.com/tazwar9t62/YureAtlas/pull/4) |
 | T01 | Reliable isolated backend checks and CI foundation | T00 | Merged | `test/isolated-verification` | [#5](https://github.com/tazwar9t62/YureAtlas/issues/5) / [PR #10](https://github.com/tazwar9t62/YureAtlas/pull/10) |
-| T02 | Catalogue revisions and import coverage correctness | T01 | In review | `fix/catalogue-reconciliation` | [#11](https://github.com/tazwar9t62/YureAtlas/issues/11) / [PR #16](https://github.com/tazwar9t62/YureAtlas/pull/16) |
-| T03 | Deterministic baseline comparisons and report scope | T02 | Planned | `fix/comparison-provenance` | Not created |
+| T02 | Catalogue revisions and import coverage correctness | T01 | Merged | `fix/catalogue-reconciliation` | [#11](https://github.com/tazwar9t62/YureAtlas/issues/11) / [PR #16](https://github.com/tazwar9t62/YureAtlas/pull/16) |
+| T03 | Deterministic baseline comparisons and report scope | T02 | In progress | `fix/comparison-provenance` | [#17](https://github.com/tazwar9t62/YureAtlas/issues/17); PR pending |
 | T04 | Prospective timing, model partitions, and scientific checks | T02, T03 | Planned | `test/scientific-invariants` | Not created |
 | T05 | Worker scheduling, recovery, and operational readiness | T01, T04 | Planned | `fix/worker-recovery` | Not created |
 | T06 | Complete native/Compose backups and persistent restores | T01, T05 | Planned | `fix/backup-restore` | Not created |
@@ -100,6 +100,13 @@ Acceptance: M4.2 → M2.8 and in-domain → out-of-domain corrections no longer 
 ## T03 — Baseline comparisons and report scope
 
 Problem: same-date historical-rate versions overwrite each other in arbitrary row order; exports ignore the selected period.
+
+| Smaller issue | Status / evidence |
+| --- | --- |
+| T03.1 [#18](https://github.com/tazwar9t62/YureAtlas/issues/18): deterministic compatible references | Implemented: 262 unit + all 51 PostGIS checks, lint/types/contracts passed; exact commit recorded in the linked issue |
+| T03.2 [#19](https://github.com/tazwar9t62/YureAtlas/issues/19): exact cohort scores and uncertainty | Planned |
+| T03.3 [#20](https://github.com/tazwar9t62/YureAtlas/issues/20): report filters and exports | Planned |
+| T03.4 [#21](https://github.com/tazwar9t62/YureAtlas/issues/21): visible provenance and aligned scope | Planned |
 
 - **T03.1 — Choose compatible references deterministically.** Define a stable reference-selection policy for identical experiment/window/mode/grid/observation eligibility. Return reference model/forecast IDs and explicit exclusion reasons. Avoid silently switching reference models with query ordering.
 - **T03.2 — Preserve exact aggregate semantics.** Test row-order permutations, multiple compatible/incompatible baseline versions, unavailable observations, pooled denominators, and uncertainty prerequisites. No match yields N/A with a reason.
@@ -247,3 +254,5 @@ T02.3 separates explicit JMA catalogue collections from immutable fixed-width fi
 T02.4 closes that USGS attempt race with per-source, nonblocking session locks and write-time ownership checks. Network work holds no open database transaction, and a disconnected old owner cannot publish after a successor. Eight real concurrency cases cover isolation, cancellation/error cleanup and lost-session fencing. Ten end-to-end correction/reconciliation cases preserve earlier snapshot membership, probabilities, evaluations and real model/feature bytes while observations change or remain unknown as appropriate. A separate owned migration scenario verifies populated002→003→004→head preservation, legacy hashes/deduplication, appended corrections, constraints and repeat-upgrade idempotence. Verification: 239 unit checks and all 49 PostGIS checks, migrations, lint, TypeScript, read-only contracts and Actionlint passed. Live USGS exposed optional query metadata count; independent preflight matching now handles it while feeds remain strict. Live official JMA exposed 87 safe agency-exclusion format cases, now covered by actual-file fixtures. Repeat live smoke passed: five USGS records and one exact-ID response; all 257,020 JMA rows parsed into 246,944 selected, 103 safe exclusions and 9,973 missing-magnitude blockers. The JMA file therefore remains partial. Details, hashes, reproducible commands and limitations are in [verification](verification.md#2026-10-25-catalogue-correction-acceptance-t024). All smaller issues are implemented; parent PR review and CI are next.
 
 T02 opened as [PR #16](https://github.com/tazwar9t62/YureAtlas/pull/16) with separate implementation commits for #12–#15. Supplementary independent reviews are clear; the requested overall Codex review and exact-head CI remain pending. T03 implementation has not started.
+
+T02 subsequently cleared [Codex review without findings](https://github.com/tazwar9t62/YureAtlas/pull/16#issuecomment-6394696919) at `b6693d44193bc09e5ae6bbd31fe7dca0f42fd932`. [CI passed](https://github.com/tazwar9t62/YureAtlas/actions/runs/40171345947), including 239 unit checks, all 49 PostGIS checks, populated migrations, lint, TypeScript, contracts and the default production build; GitGuardian also passed. No actionable review threads remained. PR #16 merged as `40497f22cf6b5e781567343514ac40dc229f14ff`, and issues #11–#15 closed. T03 starts from that updated main on `fix/comparison-provenance`; parent #17 and smaller issues #18–#21 were created before implementation.

@@ -1,6 +1,5 @@
 import json
 from datetime import timedelta
-from itertools import pairwise
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
@@ -450,86 +449,104 @@ def event_revisions(event_id: str) -> list[dict]:
 
 @app.get("/metrics")
 def metrics(experiment_id: str, mode: str, days: int = Query(30, ge=0, le=3650)) -> dict:
-    from .artifacts import digest
-    from .metrics import aggregate, brier_skill, paired_block_interval
+    from collections import defaultdict
+
+    from .comparisons import build_comparison_report
 
     with transaction() as s:
-        query = (
-            select(t.Forecast, t.Model)
-            .join(t.Model, t.Model.id == t.Forecast.model_id)
-            .where(t.Forecast.experiment_id == experiment_id, t.Forecast.mode == mode)
+        scope = [t.Forecast.experiment_id == experiment_id, t.Forecast.mode == mode]
+        if days:
+            latest = s.scalar(select(func.max(t.Forecast.end)).where(*scope))
+            if latest is not None:
+                scope.append(t.Forecast.start >= latest - timedelta(days=days))
+        query = select(t.Forecast, t.Model).join(t.Model, t.Model.id == t.Forecast.model_id).where(*scope)
+        forecasts = list(s.execute(query))
+        if not forecasts:
+            return {"mode": mode, "days": days, **build_comparison_report([])}
+
+        grid = s.execute(
+            select(t.Grid.id, t.Grid.geometry_hash, t.Experiment.source_id)
+            .join(t.Experiment, t.Experiment.grid_id == t.Grid.id)
+            .where(t.Experiment.id == experiment_id)
+        ).one()
+        grid_ids = set(s.scalars(select(t.Cell.id).where(t.Cell.grid_id == grid.id)))
+        # Select the latest evaluation once in bulk; later evidence reads use
+        # those exact immutable IDs even if another worker appends an evaluation.
+        ranked = (
+            select(
+                t.Evaluation.id,
+                func.row_number()
+                .over(
+                    partition_by=t.Evaluation.forecast_id,
+                    order_by=(
+                        t.Evaluation.version.desc(),
+                        t.Evaluation.created_at.desc(),
+                        t.Evaluation.id.desc(),
+                    ),
+                )
+                .label("position"),
+            )
+            .join(t.Forecast, t.Forecast.id == t.Evaluation.forecast_id)
+            .where(*scope)
+            .subquery()
         )
-        forecasts = list(s.execute(query.order_by(t.Forecast.start)))
-        if forecasts and days:
-            latest = max(f.end for f, m in forecasts)
-            forecasts = [(f, m) for f, m in forecasts if f.start >= latest - timedelta(days=days)]
+        evaluated = {
+            evaluation.forecast_id: (evaluation, snapshot)
+            for evaluation, snapshot in s.execute(
+                select(t.Evaluation, t.Snapshot)
+                .join(ranked, ranked.c.id == t.Evaluation.id)
+                .outerjoin(t.Snapshot, t.Snapshot.id == t.Evaluation.snapshot_id)
+                .where(ranked.c.position == 1)
+            )
+        }
+        observations, forecast_cells = defaultdict(list), defaultdict(set)
+        evaluation_ids = [evaluation.id for evaluation, _ in evaluated.values()]
+        # Bounded bind batches also keep all-history exports below PostgreSQL's
+        # parameter limit without reverting to per-forecast queries.
+        for offset in range(0, len(evaluation_ids), 1000):
+            for evaluation_id, cell_id, count in s.execute(
+                select(
+                    t.EvaluationCell.evaluation_id, t.EvaluationCell.cell_id, t.EvaluationCell.observed_count
+                ).where(t.EvaluationCell.evaluation_id.in_(evaluation_ids[offset : offset + 1000]))
+            ):
+                observations[evaluation_id].append((cell_id, int(count > 0) if count >= 0 else -1))
+        for forecast_id, cell_id in s.execute(
+            select(t.ForecastCell.forecast_id, t.ForecastCell.cell_id)
+            .join(t.Forecast, t.Forecast.id == t.ForecastCell.forecast_id)
+            .where(*scope)
+        ):
+            forecast_cells[forecast_id].add(cell_id)
         records = []
         for f, m in forecasts:
-            e = latest_evaluation(s, f.id)
-            if not e:
-                continue
-            snapshot = s.get(t.Snapshot, e.snapshot_id)
-            signature = digest(snapshot.revision_ids)
+            e, snapshot = evaluated.get(f.id, (None, None))
             records.append(
                 {
-                    "date": f.start.isoformat(),
                     "forecast_id": f.id,
+                    "forecast_created_at": f.created_at,
                     "model_id": m.id,
                     "algorithm": m.algorithm,
-                    "evaluation_id": e.id,
-                    "evaluation_version": e.version,
-                    "status": e.status,
-                    "snapshot": signature,
-                    "metrics": e.metrics,
+                    "experiment_id": f.experiment_id,
+                    "start": f.start,
+                    "end": f.end,
+                    "mode": f.mode,
+                    "grid_hash": f.provenance.get("grid_hash"),
+                    "grid_cell_ids": grid_ids,
+                    "forecast_cell_ids": forecast_cells[f.id],
+                    "evidence_valid": (
+                        f.provenance.get("grid_hash") == grid.geometry_hash
+                        and m.experiment_id == f.experiment_id
+                        and snapshot is not None
+                        and snapshot.source_id == grid.source_id
+                    ),
+                    "evaluation_id": e.id if e else None,
+                    "evaluation_version": e.version if e else None,
+                    "status": e.status if e else "not_evaluated",
+                    "revision_ids": snapshot.revision_ids if snapshot else None,
+                    "observations": observations[e.id] if e else None,
+                    "metrics": e.metrics if e else None,
                 }
             )
-        baseline = {r["date"]: r for r in records if r["algorithm"] == "historical_rate"}
-        models = {}
-        for r in records:
-            models.setdefault(r["model_id"], []).append(r)
-        comparisons = []
-        for model_id, series in models.items():
-            paired = [
-                r
-                for r in series
-                if r["date"] in baseline
-                and r["metrics"]["n"] > 0
-                and r["snapshot"] == baseline[r["date"]]["snapshot"]
-                and r["metrics"]["n"] == baseline[r["date"]]["metrics"]["n"]
-            ]
-            model_score = aggregate([r["metrics"] for r in paired])
-            reference_score = aggregate([baseline[r["date"]]["metrics"] for r in paired])
-            # Only contiguous daily sequences qualify for time-block uncertainty.
-            from .timeutil import utc
-
-            dates = sorted(utc(r["date"]) for r in paired)
-            contiguous = all(b - a == timedelta(days=1) for a, b in pairwise(dates))
-            uncertainty = (
-                paired_block_interval(
-                    [r["metrics"]["brier"] - baseline[r["date"]]["metrics"]["brier"] for r in paired]
-                )
-                if contiguous
-                else {"status": "insufficient_data", "reason": "Nonconsecutive eligible days"}
-            )
-            comparisons.append(
-                {
-                    "model_id": model_id,
-                    "algorithm": series[0]["algorithm"],
-                    "metrics": aggregate([r["metrics"] for r in series]),
-                    "paired_metrics": model_score,
-                    "brier_skill": brier_skill(model_score["brier"], reference_score["brier"]),
-                    "paired_days": len(paired),
-                    "excluded_days": len(series) - len(paired),
-                    "uncertainty": uncertainty,
-                }
-            )
-        return {
-            "mode": mode,
-            "days": days,
-            "series": records,
-            "comparisons": comparisons,
-            "matching_policy": "same experiment, start, mode, observation revision set and eligible cells",
-        }
+        return {"mode": mode, "days": days, **build_comparison_report(records)}
 
 
 def unique_mapping_object(pairs):
