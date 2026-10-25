@@ -17,7 +17,9 @@ from .etas import ETAS
 from .features import NAMES, SCHEMA, features, labels
 from .rate import HistoricalRate
 from .tables import FeatureSet, now
-from .timeutil import JST, jst_day
+from .training_inputs import validate_training_inputs
+
+TRAINING_RECIPE = "chronological-windows-v2"
 
 
 def logit(p):
@@ -28,11 +30,15 @@ def logit(p):
 def train_suite(
     experiment_id, cutoff, fit_days=180, tune_days=30, calibration_days=30, progress=lambda p: None
 ):
+    receipt_cutoff = now()
+    cutoff = validate_training_inputs(cutoff, receipt_cutoff, fit_days, tune_days, calibration_days)
     experiment, grid = load_experiment(experiment_id)
-    cutoff = jst_day(cutoff.astimezone(JST).date())[0]
     calibration_start = cutoff - timedelta(days=calibration_days)
     tune_start = calibration_start - timedelta(days=tune_days)
     fit_start = tune_start - timedelta(days=fit_days)
+    first_row_cutoff = fit_start - timedelta(minutes=30)
+    warm_start = first_row_cutoff - timedelta(days=90)
+    etas_start = max(fit_start, tune_start - timedelta(days=90))
     total_days = fit_days + tune_days + calibration_days
     if total_days * len(grid.ids) > 4_000_000:
         raise ValueError(
@@ -46,9 +52,17 @@ def train_suite(
         "availability": "retrospective_revised",
         "grouping": "all cells on a date stay together",
     }
-    snapshot, rows = make_snapshot(experiment.source_id, now(), "retrospective_revised", origin_before=cutoff)
+    snapshot, rows = make_snapshot(
+        experiment.source_id, receipt_cutoff, "retrospective_revised", origin_before=cutoff
+    )
     events = event_arrays(rows, grid, experiment.config)
     target = experiment.config["target_magnitude"]
+    coverage_identity = {
+        "start": warm_start.isoformat(),
+        "end": cutoff.isoformat(),
+        "complete": has_coverage(experiment.source_id, warm_start, cutoff, cutoff=snapshot.cutoff),
+        "policy": "complete_retrieval_asof_training_snapshot",
+    }
     common = {
         "feature_schema": SCHEMA,
         "features": NAMES,
@@ -58,6 +72,8 @@ def train_suite(
         "class_weights": None,
         "early_stopping": False,
         "thread_limit": 2,
+        "training_recipe": TRAINING_RECIPE,
+        "training_coverage": dict(coverage_identity, receipt_cutoff=snapshot.cutoff.isoformat()),
     }
     common["training_signature"] = digest(
         {
@@ -65,7 +81,11 @@ def train_suite(
             "partitions": partitions,
             "revisions": snapshot.revision_ids,
             "schema": SCHEMA,
-            "recipe": "v1",
+            "recipe": TRAINING_RECIPE,
+            # Coverage-only repairs can change availability without changing
+            # any revision ID. The receipt cutoff is audit metadata, not a
+            # volatile dependency that invalidates identical complete fits.
+            "coverage": coverage_identity,
         }
     )
     from sqlalchemy import select
@@ -85,6 +105,90 @@ def train_suite(
         return existing
     available = []
 
+    def window(start, end, role, **details):
+        return {
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "duration_days": (end - start).total_seconds() / 86400,
+            "role": role,
+            **details,
+        }
+
+    def event_count(start, end, *, target_only=False):
+        mask = (events["t"] >= start.timestamp() / 86400) & (events["t"] < end.timestamp() / 86400)
+        if target_only:
+            mask &= events["m"] >= target
+        return int(mask.sum())
+
+    def supervised_window(start, end, role, partition):
+        details = {"cell_day_count": (end - start).days * len(grid.ids)}
+        if "positive_counts" in common:
+            details["positive_cell_day_count"] = common["positive_counts"][partition]
+        return window(start, end, role, **details)
+
+    def training_metadata(algorithm, *, completed=True, **details):
+        windows = dict.fromkeys(("fit", "context", "selection", "calibration", "diagnostic"))
+        if algorithm == "etas_discrete_space":
+            windows["fit"] = window(
+                etas_start,
+                tune_start,
+                "conditional_point_process_fit_empty_initial_history",
+                event_count=event_count(etas_start, tune_start, target_only=True),
+            )
+        elif algorithm == "historical_rate":
+            windows["fit"] = window(
+                fit_start,
+                tune_start,
+                "target_event_rate_fit",
+                event_count=event_count(fit_start, tune_start, target_only=True),
+            )
+            windows["selection"] = supervised_window(
+                tune_start, calibration_start, "rate_hyperparameter_selection", "tune"
+            )
+        else:
+            hybrid = algorithm == "calibrated_hybrid"
+            windows["fit"] = supervised_window(
+                fit_start,
+                tune_start,
+                "rate_and_classifier_component_fit" if hybrid else "histogram_gradient_boosting_fit",
+                "fit",
+            )
+            if hybrid:
+                windows["fit"]["event_count"] = event_count(fit_start, tune_start, target_only=True)
+            # Context is the union of inputs to generated feature rows, not an
+            # extra parameter-fitting block. Each row still stops 30m before
+            # its own target start, including later diagnostic/calibration rows.
+            context_end = cutoff - timedelta(days=1, minutes=30)
+            windows["context"] = window(
+                warm_start,
+                context_end,
+                "per_row_feature_inputs",
+                event_count=event_count(warm_start, context_end),
+                warmup_end=first_row_cutoff.isoformat(),
+                first_row_cutoff=first_row_cutoff.isoformat(),
+                per_row_cutoff_minutes=30,
+            )
+            windows["selection" if hybrid else "diagnostic"] = supervised_window(
+                tune_start,
+                calibration_start,
+                "mixture_weight_and_rate_hyperparameter_selection"
+                if hybrid
+                else "raw_classifier_brier_diagnostic_only",
+                "tune",
+            )
+            windows["calibration"] = supervised_window(
+                calibration_start,
+                cutoff,
+                "sigmoid_fit_on_selected_mixture" if hybrid else "sigmoid_fit_on_raw_classifier",
+                "calibration",
+            )
+        return dict(
+            common,
+            training_windows=windows,
+            training_windows_status="completed" if completed else "planned_unavailable",
+            **details,
+        )
+
     def unavailable(algorithm, reason):
         model = save_model(
             experiment,
@@ -92,13 +196,12 @@ def train_suite(
             None,
             cutoff,
             snapshot.id,
-            dict(common, reason=str(reason)),
+            training_metadata(algorithm, completed=False, reason=str(reason)),
             "insufficient_data",
         )
         available.append(model)
 
-    warm_start = fit_start - timedelta(days=90)
-    if not len(events["t"]) or not has_coverage(experiment.source_id, warm_start, cutoff):
+    if not len(events["t"]) or not coverage_identity["complete"]:
         for algorithm in (
             "historical_rate",
             "hist_gradient_boosting",
@@ -161,7 +264,13 @@ def train_suite(
         for sigma in (0.6, 1.4, 2.5):
             for shrinkage in (0.02, 0.1):
                 model = HistoricalRate.fit(
-                    events, grid, history_start, tune_start.timestamp() / 86400, target, sigma, shrinkage
+                    events,
+                    grid,
+                    fit_start.timestamp() / 86400,
+                    tune_start.timestamp() / 86400,
+                    target,
+                    sigma,
+                    shrinkage,
                 )
                 loss = np.mean((np.tile(model.predict(), tune_days) - y_tune) ** 2)
                 candidates.append((float(loss), model))
@@ -172,8 +281,8 @@ def train_suite(
             rate,
             cutoff,
             snapshot.id,
-            dict(
-                common,
+            training_metadata(
+                "historical_rate",
                 **rate.diagnostics,
                 tuning_brier=tuning_score,
                 selection="six smoothing/shrinkage settings on later tuning block",
@@ -228,9 +337,10 @@ def train_suite(
                 ml_artifact,
                 cutoff,
                 snapshot.id,
-                dict(
-                    common,
+                training_metadata(
+                    "hist_gradient_boosting",
                     hyperparameters=classifier.get_params(),
+                    selection="fixed hyperparameters; tuning Brier is diagnostic only",
                     calibration="sigmoid on independent later calibration block",
                     tuning_brier=float(np.mean((ml_tune - y_tune) ** 2)),
                 ),
@@ -260,8 +370,8 @@ def train_suite(
                     hybrid,
                     cutoff,
                     snapshot.id,
-                    dict(
-                        common,
+                    training_metadata(
+                        "calibrated_hybrid",
                         components=[rate_model.id, ml_model.id],
                         component_algorithms=["historical_rate", "raw hist_gradient_boosting"],
                         weights={"historical_rate": 1 - weight, "ml": weight},
@@ -276,7 +386,7 @@ def train_suite(
         etas = ETAS.fit(
             events,
             grid,
-            (tune_start - timedelta(days=90)).timestamp() / 86400,
+            etas_start.timestamp() / 86400,
             tune_start.timestamp() / 86400,
             target,
             lambda _: progress(0.9),
@@ -288,8 +398,8 @@ def train_suite(
                 etas,
                 cutoff,
                 snapshot.id,
-                dict(
-                    common,
+                training_metadata(
+                    "etas_discrete_space",
                     **etas.diagnostics,
                     simulations=etas.simulations,
                     smoothing="Jeffreys (hits+0.5)/(simulations+1)",

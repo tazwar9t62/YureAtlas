@@ -7,6 +7,7 @@ from pathlib import Path
 import joblib
 import numpy as np
 from sqlalchemy import insert, select, text
+from sqlalchemy.exc import DBAPIError
 
 from .artifacts import digest, put, read
 from .catalogue import event_arrays, has_coverage, load_experiment, make_snapshot
@@ -15,6 +16,7 @@ from .eligibility import eligible_cell
 from .metrics import score
 from .rate import HistoricalRate
 from .tables import Evaluation, EvaluationCell, Forecast, ForecastCell, Model, Snapshot, now, uid
+from .timeutil import utc
 
 
 def save_model(experiment, algorithm, artifact, cutoff, snapshot_id, metadata, status="available"):
@@ -75,35 +77,111 @@ def code_provenance():
 
 
 def train_rate(experiment_id, cutoff, history_start=None):
+    cutoff = utc(cutoff)
+    history_start = utc(history_start) if history_start is not None else None
     experiment, grid = load_experiment(experiment_id)
     snapshot, rows = make_snapshot(experiment.source_id, now(), "retrospective_revised", origin_before=cutoff)
     events = event_arrays(rows, grid, experiment.config)
-    if len(events["t"]) < 5:
+    target = experiment.config["target_magnitude"]
+    if history_start is None and len(events["t"]):
+        history_start = utc(
+            min(row.origin_time for row in rows if eligible_cell(row, grid, experiment.config) is not None)
+        )
+    fit_window = None
+    fitting_events = 0
+    if history_start is not None:
+        if history_start >= cutoff:
+            raise ValueError("Positive training duration required")
+        fitting_events = int(
+            (
+                (events["t"] >= history_start.timestamp() / 86400)
+                & (events["t"] < cutoff.timestamp() / 86400)
+                & (events["m"] >= target)
+            ).sum()
+        )
+        fit_window = {
+            "start": history_start.isoformat(),
+            "end": cutoff.isoformat(),
+            "duration_days": (cutoff - history_start).total_seconds() / 86400,
+            "role": "target_event_rate_fit",
+            "event_count": fitting_events,
+        }
+    metadata = {
+        "feature_schema": "rate-v1",
+        "selection": "fixed initial settings",
+        "training_recipe": "fixed-rate-window-v2",
+        "training_windows": {
+            "fit": fit_window,
+            "context": None,
+            "selection": None,
+            "calibration": None,
+            "diagnostic": None,
+        },
+        "training_windows_status": "planned_unavailable",
+    }
+    if fitting_events < 5:
         return save_model(
             experiment,
             "historical_rate",
             None,
             cutoff,
             snapshot.id,
-            {"reason": "Insufficient catalogue records"},
+            dict(
+                metadata,
+                reason=f"Insufficient data: at least five target events in the fit window required; received {fitting_events}",
+            ),
             "insufficient_data",
         )
     end = cutoff.timestamp() / 86400
-    start = history_start.timestamp() / 86400 if history_start else float(events["t"].min())
-    artifact = HistoricalRate.fit(events, grid, start, end, experiment.config["target_magnitude"])
+    start = history_start.timestamp() / 86400
+    artifact = HistoricalRate.fit(events, grid, start, end, target)
     return save_model(
         experiment,
         "historical_rate",
         artifact,
         cutoff,
         snapshot.id,
-        dict(artifact.diagnostics, feature_schema="rate-v1", selection="fixed initial settings"),
+        dict(metadata, **artifact.diagnostics, training_windows_status="completed"),
     )
+
+
+def _validate_publication_time(model, start, cutoff, issue, mode, stage):
+    if cutoff > start or model.training_cutoff > cutoff:
+        raise ValueError("Training and feature cutoffs must precede the prediction window")
+    if mode != "prospective":
+        return
+    if issue >= start:
+        raise ValueError(f"Missed publication deadline {stage}; nothing published")
+    if issue < cutoff:
+        raise ValueError("Future input cutoff; choose a genuinely future window")
+    if model.available_at > issue:
+        raise ValueError("Model artifact unavailable at issuance; nothing published")
+
+
+def _validated_output(probabilities, expected, cell_count):
+    try:
+        probabilities = np.asarray(probabilities, dtype=float)
+        expected = np.asarray(expected, dtype=float) if expected is not None else None
+    except (TypeError, ValueError) as error:
+        raise ValueError("Invalid or incomplete model output; nothing published") from error
+    if (
+        probabilities.shape != (cell_count,)
+        or not np.isfinite(probabilities).all()
+        or ((probabilities < 0) | (probabilities > 1)).any()
+        or (
+            expected is not None
+            and (expected.shape != (cell_count,) or not np.isfinite(expected).all() or (expected < 0).any())
+        )
+    ):
+        raise ValueError("Invalid or incomplete model output; nothing published")
+    return probabilities, expected
 
 
 def issue_forecast(
     experiment_id, model_id, start, *, mode="prospective", cutoff=None, progress=lambda p: None
 ):
+    start = utc(start)
+    cutoff = utc(cutoff) if cutoff is not None else start - timedelta(minutes=30)
     experiment, grid = load_experiment(experiment_id)
     if mode not in {"prospective", "retrospective_revised", "synthetic_demo"}:
         raise ValueError(
@@ -111,32 +189,38 @@ def issue_forecast(
         )
     if experiment.synthetic != (mode == "synthetic_demo"):
         raise ValueError("Synthetic and real forecasts must remain separate")
-    cutoff = cutoff or start - timedelta(minutes=30)
     if cutoff != start - timedelta(minutes=30):
         raise ValueError("This feature schema requires the input cutoff exactly 30 minutes before the window")
+    # Legacy direct Python callers could hash an equivalent non-UTC start into
+    # another key. Recognize their immutable rows without rewriting old keys.
+    existing_query = (
+        select(Forecast)
+        .where(
+            Forecast.experiment_id == experiment_id,
+            Forecast.model_id == model_id,
+            Forecast.start == start,
+            Forecast.mode == mode,
+        )
+        .order_by(Forecast.created_at, Forecast.id)
+        .limit(1)
+    )
     with transaction() as s:
         model = s.get(Model, model_id)
         if not model or model.experiment_id != experiment_id:
             raise ValueError("Model and experiment are incompatible")
         key = digest({"experiment": experiment_id, "model": model_id, "start": start, "mode": mode})
-        existing = s.scalar(select(Forecast).where(Forecast.logical_key == key))
+        existing = s.scalar(existing_query)
         if existing:
             return existing
-    issue = now()
-    if cutoff > start or model.training_cutoff > cutoff:
-        raise ValueError("Training and feature cutoffs must precede the prediction window")
+    _validate_publication_time(model, start, cutoff, now(), mode, "before computation")
     if mode == "prospective":
-        if not cutoff <= issue < start or model.available_at > issue:
-            raise ValueError(
-                "Missed publication deadline or future input cutoff; choose a genuinely future window"
-            )
         from .tables import Source
 
         with transaction() as s:
             source = s.get(Source, experiment.source_id)
             source_failed = source.status == "failed"
         if source_failed or not has_coverage(
-            experiment.source_id, cutoff - timedelta(days=1), cutoff - timedelta(minutes=30), cutoff=issue
+            experiment.source_id, cutoff - timedelta(days=1), cutoff - timedelta(minutes=30), cutoff=cutoff
         ):
             raise ValueError("Recent input coverage unavailable; forecast withheld")
     snapshot_cutoff = cutoff if mode == "prospective" else now()
@@ -153,16 +237,7 @@ def issue_forecast(
         probabilities, expected = predict_artifact(
             artifact, events, grid, cutoff.timestamp() / 86400, experiment.config, progress
         )
-    probabilities = np.asarray(probabilities, dtype=float)
-    if (
-        len(probabilities) != len(grid.ids)
-        or not np.isfinite(probabilities).all()
-        or ((probabilities < 0) | (probabilities > 1)).any()
-    ):
-        raise ValueError("Invalid or incomplete model output; nothing published")
-    issue = now()  # Publication time, never a backdated issue timestamp.
-    if mode == "prospective" and issue >= start:
-        raise ValueError("Missed publication deadline during computation; nothing published")
+    probabilities, expected = _validated_output(probabilities, expected, len(grid.ids))
     forecast_id = uid()
     values = [
         {
@@ -178,41 +253,62 @@ def issue_forecast(
         }
         for i, (cell, p) in enumerate(zip(grid.ids, probabilities))
     ]
-    with transaction() as s:
-        s.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": key})
-        existing = s.scalar(select(Forecast).where(Forecast.logical_key == key))
-        if existing:
-            return existing
-        s.execute(insert(ForecastCell), values)
-        forecast = Forecast(
-            id=forecast_id,
-            logical_key=key,
-            experiment_id=experiment_id,
-            model_id=model_id,
-            snapshot_id=snapshot.id,
-            issued_at=issue,
-            start=start,
-            end=start + timedelta(days=1),
-            input_cutoff=cutoff,
-            mode=mode,
-            status="published",
-            provenance={
-                "experiment_hash": experiment.config_hash,
-                "grid_hash": grid.hash,
-                "model_artifact": model.artifact,
-                "model_training_cutoff": model.training_cutoff.isoformat(),
-                "feature_schema": model.metadata_.get("feature_schema", "v1"),
-                "snapshot_id": snapshot.id,
-                "availability_policy": mode,
-                "seed": 2026,
-                "thresholds": {"yellow": experiment.config["yellow"], "red": experiment.config["red"]},
-                "cell_count": len(values),
-                **code_provenance(),
-            },
-        )
-        s.add(forecast)
-        s.flush()
-        return forecast
+    # Hashing source/dependencies and persisting their artifacts can take time;
+    # finish that work before entering the publication transaction.
+    provenance = {
+        "experiment_hash": experiment.config_hash,
+        "grid_hash": grid.hash,
+        "model_artifact": model.artifact,
+        "model_training_cutoff": model.training_cutoff.isoformat(),
+        "feature_schema": model.metadata_.get("feature_schema", "v1"),
+        "snapshot_id": snapshot.id,
+        "availability_policy": mode,
+        "seed": 2026,
+        "thresholds": {"yellow": experiment.config["yellow"], "red": experiment.config["red"]},
+        "cell_count": len(values),
+        **code_provenance(),
+    }
+    try:
+        with transaction() as s:
+            s.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": key})
+            existing = s.scalar(existing_query)
+            if existing:
+                return existing
+            # This is an issuance timestamp inside the transaction, not a claim
+            # about physical commit visibility. Revalidate after any lock wait.
+            issue = now()
+            _validate_publication_time(model, start, cutoff, issue, mode, "during computation or publication")
+            s.execute(insert(ForecastCell), values)
+            forecast = Forecast(
+                id=forecast_id,
+                logical_key=key,
+                experiment_id=experiment_id,
+                model_id=model_id,
+                snapshot_id=snapshot.id,
+                issued_at=issue,
+                start=start,
+                end=start + timedelta(days=1),
+                input_cutoff=cutoff,
+                mode=mode,
+                status="published",
+                provenance=provenance,
+            )
+            s.add(forecast)
+            s.flush()
+            _validate_publication_time(model, start, cutoff, now(), mode, "after publication flush")
+            # The initially deferred DB trigger also checks its own wall clock
+            # at transaction finalization, including delays after this flush.
+            return forecast
+    except DBAPIError as error:
+        if (
+            getattr(error.orig, "sqlstate", None) == "23514"
+            and getattr(getattr(error.orig, "diag", None), "constraint_name", None)
+            == "prospective_publication_deadline"
+        ):
+            raise ValueError(
+                "Missed publication deadline during transaction finalization; nothing published"
+            ) from error
+        raise
 
 
 def evaluate_forecast(forecast_id, *, asof=None):

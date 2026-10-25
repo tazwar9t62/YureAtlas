@@ -55,7 +55,9 @@ def catalogue_records():
             "event_type": "earthquake",
         }
 
-    return [record(f"history-{i}", START - timedelta(days=100 - i * 4)) for i in range(8)] + [
+    # The suite below declares a 30-day fit block [START-45d, START-15d).
+    # Its fitted baseline must use events inside that block, not only warmup.
+    return [record(f"history-{i}", START - timedelta(days=44 - i * 4)) for i in range(8)] + [
         record("observed", START + timedelta(hours=6))
     ]
 
