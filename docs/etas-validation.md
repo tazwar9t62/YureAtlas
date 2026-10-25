@@ -20,7 +20,7 @@ integral = mu*(end-start) + sum_i k(m_i)*G(end-t_i)
 negative_log_likelihood = integral - sum_i log(lambda[cell_i,t_i])
 ```
 
-The integral assumes empty history at the fitting start and events inside the half-open fitting window. Spatial rows sum to one over retained cells; distances are haversine distances between cell centroids. Under exponential magnitude excess with rate `beta`, the unconditional offspring mean is `n`, requiring `alpha < beta` and `n < 1`. The fixed area background, cell discretization, finite-domain renormalization, no outside parents and fixed magnitude-independent spatial scale are deliberate approximations. Prediction uses at most 90 days of observed parent history and simulates the unobserved gap before the target as well as subsequent generations.
+The integral assumes empty history at the fitting start and events inside the half-open fitting window. Spatial rows sum to one over retained cells; distances are haversine distances between cell centroids. Under exponential magnitude excess with rate `beta`, the unconditional offspring mean is `n`, requiring `alpha < beta` and `n < 1`. Fitting estimates `beta=1/max(mean(m-m0),0.1)` before optimizing the other parameters; this is a stabilized plug-in estimate. The fixed area background, cell discretization, finite-domain renormalization, no outside parents and fixed magnitude-independent spatial scale are deliberate approximations. Prediction uses at most 90 days of observed parent history and simulates the unobserved gap before the target as well as subsequent generations.
 
 ## Independent likelihood fixture
 
