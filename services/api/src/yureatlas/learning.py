@@ -17,7 +17,7 @@ from .etas import ETAS
 from .features import NAMES, SCHEMA, features, labels
 from .rate import HistoricalRate
 from .tables import FeatureSet, now
-from .timeutil import JST, jst_day
+from .training_inputs import validate_training_inputs
 
 TRAINING_RECIPE = "chronological-windows-v2"
 
@@ -30,8 +30,9 @@ def logit(p):
 def train_suite(
     experiment_id, cutoff, fit_days=180, tune_days=30, calibration_days=30, progress=lambda p: None
 ):
+    receipt_cutoff = now()
+    cutoff = validate_training_inputs(cutoff, receipt_cutoff, fit_days, tune_days, calibration_days)
     experiment, grid = load_experiment(experiment_id)
-    cutoff = jst_day(cutoff.astimezone(JST).date())[0]
     calibration_start = cutoff - timedelta(days=calibration_days)
     tune_start = calibration_start - timedelta(days=tune_days)
     fit_start = tune_start - timedelta(days=fit_days)
@@ -51,7 +52,9 @@ def train_suite(
         "availability": "retrospective_revised",
         "grouping": "all cells on a date stay together",
     }
-    snapshot, rows = make_snapshot(experiment.source_id, now(), "retrospective_revised", origin_before=cutoff)
+    snapshot, rows = make_snapshot(
+        experiment.source_id, receipt_cutoff, "retrospective_revised", origin_before=cutoff
+    )
     events = event_arrays(rows, grid, experiment.config)
     target = experiment.config["target_magnitude"]
     coverage_identity = {

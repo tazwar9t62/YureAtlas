@@ -10,6 +10,7 @@ from .ingestion import ingest_usgs, real_experiment
 from .learning import train_suite
 from .tables import Forecast, Model, Promotion, now
 from .timeutil import utc
+from .training_inputs import validate_backtest_inputs, validate_training_inputs
 
 
 def run_backtest(
@@ -22,9 +23,8 @@ def run_backtest(
     calibration_days=30,
     progress=lambda p: None,
 ):
+    start = validate_backtest_inputs(start, now(), test_days, folds, fit_days, tune_days, calibration_days)
     experiment, _ = load_experiment(experiment_id)
-    if start + timedelta(days=test_days * folds) > now():
-        raise ValueError("Backtest target windows must be completed")
     mode = "synthetic_demo" if experiment.synthetic else "retrospective_revised"
     forecasts = []
     model_ids = []
@@ -183,10 +183,32 @@ def execute(kind, payload, progress):
             "experiment_id": experiment_id,
             **ingest_usgs(experiment_id, start, end, progress, use_feed=(end - start).days <= 7),
         }
+    # CLI/durable payloads bypass the HTTP schema. Reject invalid chronology
+    # before even the fallback experiment/source/grid can be created.
+    if kind == "train":
+        timestamp = now()
+        cutoff = validate_training_inputs(
+            payload["end"] if payload.get("end") else timestamp,
+            timestamp,
+            payload.get("fit_days", 180),
+            payload.get("tune_days", 30),
+            payload.get("calibration_days", 30),
+        )
+    elif kind == "backtest":
+        if not payload.get("start"):
+            raise ValueError("Backtests require an explicit first test-window start")
+        start = validate_backtest_inputs(
+            payload["start"],
+            now(),
+            payload.get("test_days", 7),
+            payload.get("folds", 1),
+            payload.get("fit_days", 180),
+            payload.get("tune_days", 30),
+            payload.get("calibration_days", 30),
+        )
     if not experiment_id:
         experiment_id = real_experiment().id
     if kind == "train":
-        cutoff = utc(payload["end"]) if payload.get("end") else now()
         models = train_suite(
             experiment_id,
             cutoff,
@@ -245,11 +267,9 @@ def execute(kind, payload, progress):
             progress((index + 1) / len(ids))
         return {"evaluations": result}
     if kind == "backtest":
-        if not payload.get("start"):
-            raise ValueError("Backtests require an explicit first test-window start")
         return run_backtest(
             experiment_id,
-            utc(payload["start"]),
+            start,
             payload.get("test_days", 7),
             payload.get("folds", 1),
             payload.get("fit_days", 180),
