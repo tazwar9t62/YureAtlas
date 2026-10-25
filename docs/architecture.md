@@ -26,7 +26,7 @@ Artifacts use immutable SHA-256 filenames under the persistent artifact volume. 
 
 ## Scheduling and recovery
 
-JST defaults: recent ingestion every 15 minutes, following-day forecast at 23:40 (23:30 input cutoff), evaluation at 06:00, 31-day reconciliation at 06:30 (including D+3/7/30), retraining Sundays at 03:00. Promotion remains explicit. On startup, overdue safe ingestion/evaluation jobs are reconciled; missed daily forecasts receive a missed job record. Schedules run only while the worker and computer run. Cancellation is cooperative at batch/simulation checkpoints; individual model fitting calls finish their bounded operation before cancellation is observed.
+JST defaults: recent ingestion every 15 minutes, following-day forecast at 23:40 (23:30 input cutoff), evaluation at 06:00, 31-day reconciliation at 06:30 (including D+3/7/30), retraining Sundays at 03:00. Promotion remains explicit. On startup, overdue safe ingestion/evaluation jobs are reconciled. Restart from 23:40 until midnight queues the still-eligible upcoming target once; an absent expired target is inserted directly as a missed job. Existing decisions, including completed or cancelled jobs, remain unchanged. Each daily key identifies the experiment and canonical UTC target start. Disabled scheduling creates no automatic catch-up jobs. Schedules run only while the worker and computer run. Cancellation is cooperative at batch/simulation checkpoints; individual model fitting calls finish their bounded operation before cancellation is observed.
 
 ## Backup and restore
 

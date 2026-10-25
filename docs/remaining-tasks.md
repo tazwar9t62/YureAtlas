@@ -39,8 +39,8 @@ Dependencies below are in addition to the sequential merge rule. Branch names ar
 | T01 | Reliable isolated backend checks and CI foundation | T00 | Merged | `test/isolated-verification` | [#5](https://github.com/tazwar9t62/YureAtlas/issues/5) / [PR #10](https://github.com/tazwar9t62/YureAtlas/pull/10) |
 | T02 | Catalogue revisions and import coverage correctness | T01 | Merged | `fix/catalogue-reconciliation` | [#11](https://github.com/tazwar9t62/YureAtlas/issues/11) / [PR #16](https://github.com/tazwar9t62/YureAtlas/pull/16) |
 | T03 | Deterministic baseline comparisons and report scope | T02 | Merged | `fix/comparison-provenance` | [#17](https://github.com/tazwar9t62/YureAtlas/issues/17) / [PR #23](https://github.com/tazwar9t62/YureAtlas/pull/23) |
-| T04 | Prospective timing, model partitions, and scientific checks | T02, T03 | In review | `test/scientific-invariants` | [#24](https://github.com/tazwar9t62/YureAtlas/issues/24) / [PR #30](https://github.com/tazwar9t62/YureAtlas/pull/30) |
-| T05 | Worker scheduling, recovery, and operational readiness | T01, T04 | Planned | `fix/worker-recovery` | Not created |
+| T04 | Prospective timing, model partitions, and scientific checks | T02, T03 | Merged | `test/scientific-invariants` | [#24](https://github.com/tazwar9t62/YureAtlas/issues/24) / [PR #30](https://github.com/tazwar9t62/YureAtlas/pull/30) |
+| T05 | Worker scheduling, recovery, and operational readiness | T01, T04 | In progress | `fix/worker-recovery` | [#31](https://github.com/tazwar9t62/YureAtlas/issues/31) |
 | T06 | Complete native/Compose backups and persistent restores | T01, T05 | Planned | `fix/backup-restore` | Not created |
 | T07 | Dashboard correctness, map rendering, and browser harness | T03, T05 | Planned | `fix/dashboard-acceptance` | Not created |
 | T08 | Historical inspection, evaluation revisions, and cell evidence | T02, T03, T07 | Planned | `feat/research-inspection` | Not created |
@@ -137,13 +137,25 @@ Problem: the test named for late prospective publication currently fails earlier
 
 Acceptance: prospective receipt/coverage/deadline checks exercise the intended code paths; held-out outcomes cannot affect fitting or selection; archived windows match execution; ETAS fixture results and tolerances are reproducible. Independent scientific validation remains explicitly outstanding unless it is actually performed; it cannot be closed by renaming software tests.
 
+Review outcome: Codex [completed its overall review without findings](https://github.com/tazwar9t62/YureAtlas/pull/30#issuecomment-6395906588) of `459fa783443c7714a11ae184d27af64956cf8eb7`; the [clear receipt](https://github.com/tazwar9t62/YureAtlas/pull/30#issuecomment-6395929865), empty review/inline-thread lists and [passing CI](https://github.com/tazwar9t62/YureAtlas/actions/runs/40180420459) were verified before merge. CI passed 536 unit and 107 PostGIS tests, populated migrations, lint, TypeScript, contracts and the default production build; GitGuardian passed. PR #30 merged as `54e0dd5527f76a66b16365697c031670956b4c7b`; issues #24–#29 closed.
+
 ## T05 — Worker recovery and readiness
 
 Problem: restarting after 23:40 but before midnight skips a still-eligible daily forecast; missed triggers, cancellation, and readiness lack full acceptance coverage.
 
+| Smaller issue | Status / evidence |
+| --- | --- |
+| T05.1 [#32](https://github.com/tazwar9t62/YureAtlas/issues/32): eligible daily restart recovery | Implemented: 556 unit + all 116 PostGIS tests, lint/types/contracts passed |
+| T05.2 [#33](https://github.com/tazwar9t62/YureAtlas/issues/33): durable live reconciliation | Planned |
+| T05.3a [#34](https://github.com/tazwar9t62/YureAtlas/issues/34): ownership and cancellation | Planned |
+| T05.3b [#35](https://github.com/tazwar9t62/YureAtlas/issues/35): stable forecast execution and retry identity | Planned |
+| T05.4 [#36](https://github.com/tazwar9t62/YureAtlas/issues/36): persisted schedules and promotion state | Planned |
+| T05.5 [#37](https://github.com/tazwar9t62/YureAtlas/issues/37): structured readiness | Planned |
+
 - **T05.1 — Recover eligible daily triggers.** Test restart at 23:39, 23:40, 23:45, 23:59, and midnight JST. Queue a still-valid upcoming window once; mark expired windows missed without backdating.
 - **T05.2 — Reconcile sleep and scheduler misfires.** Reconcile clock jumps/overdue decisions during operation as well as startup, with unique logical keys. Keep ingestion/evaluation catch-up separate from prospective issuance and respect disabled scheduling.
-- **T05.3 — Verify leases, ownership, retries, and cancellation.** Exercise queued/running cancellation, process death, lease expiry, retry exhaustion, and competing workers in isolated PostgreSQL. Preserve publication idempotence and useful progress/error states.
+- **T05.3a — Fence ownership and cancellation.** Exercise queued/running cancellation, process death, lease expiry, retry exhaustion, competing workers and lost singleton sessions in isolated PostgreSQL. Only the current attempt may renew/finish a job or pass protected side-effect boundaries; preserve useful progress/error states.
+- **T05.3b — Preserve forecast retry identity.** Persist the resolved target start/cutoff, model and selection basis once, separately from the original request. Crash recovery after publication must return the same immutable forecast despite changed time or promotions. Record expired scheduled targets as structured missed decisions, independent of exception wording or model availability.
 - **T05.4 — Make effective scheduling inspectable.** Add validated persisted local schedule settings where needed by the brief, effective enablement, next run times, and promotion audit/current selection. Define configuration precedence so restore-disabled scheduling remains disabled.
 - **T05.5 — Report actionable readiness.** Check the expected schema revision, database availability, artifact read/write access, worker heartbeat, and appropriate source readiness. Return structured reasons/status codes; liveness remains lightweight.
 
@@ -272,3 +284,7 @@ T03 opened as [PR #23](https://github.com/tazwar9t62/YureAtlas/pull/23) with sep
 T03 subsequently cleared [Codex review without findings](https://github.com/tazwar9t62/YureAtlas/pull/23#issuecomment-6395351875) at `50e0605bcf712803750a05dfda23d8d14f172a75`. [CI passed](https://github.com/tazwar9t62/YureAtlas/actions/runs/40176178580), including the default production build and populated migrations; GitGuardian also passed. No actionable review threads remained. PR #23 merged as `39062a3bc654a9512051d4ca5b02254e0728d654`, and issues #17–#22 closed. T04 starts from that updated main on `test/scientific-invariants`; parent #24 and smaller issues #25–#29 were created before implementation. Initial read-only preparation confirmed coverage uses issuance time instead of input cutoff, and the final application deadline check precedes lock waits and publication work. These are the first issue's targets.
 
 T04 opened as [PR #30](https://github.com/tazwar9t62/YureAtlas/pull/30) with separate implementation/evidence commits for #25–#29. Receipt-cutoff publication, database deadline enforcement, actual training windows and coverage-sensitive identity, real learned-artifact chronology and independently checked ETAS behavior are implemented. Verification: 536 unit tests, all 107 owned PostGIS tests, populated migrations, lint, TypeScript and read-only contracts passed; independent source/mathematical/documentation reviews are clear. External predictive validation and T05–T11 remain explicitly outstanding. Requested overall Codex review and exact-head CI are pending; T05 implementation has not started.
+
+T04 subsequently cleared the exact-head review and CI recorded above and merged as `54e0dd5527f76a66b16365697c031670956b4c7b`. T05 starts from that updated main on `fix/worker-recovery`; parent #31 and smaller issues #32–#37 were created before implementation. The original ownership/retry item is split into two focused commits because lease/cancellation fencing and stable execution resolution protect different failure boundaries. T05.1 starts with eligible restart decisions and atomic missed insertion; later smaller issues remain planned.
+
+T05.1 recovers the upcoming daily target during the half-open 23:40–00:00 JST publication interval and inserts absent expired targets directly as missed. Canonical UTC keys and conflict-safe insertion preserve every existing job state; disabled scheduling performs no automatic work. The 20 new unit and nine new PostGIS cases cover boundary/offset validation, real startup behavior, synthetic exclusion, repeated/concurrent triggers and an uncommitted queued winner. Verification passed 556 unit and all 116 PostGIS tests, lint, TypeScript, contracts and independent review. No schema or API contract changed. Live misfire reconciliation remains the next smaller issue.

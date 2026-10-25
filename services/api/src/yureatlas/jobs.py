@@ -12,20 +12,40 @@ class Cancelled(Exception):
 
 
 def enqueue(kind: str, payload: dict, key: str) -> Job:
+    return _enqueue(kind, payload, key)
+
+
+def enqueue_missed(kind: str, payload: dict, key: str, reason: str) -> Job:
+    """Insert an absent missed decision without modifying existing work.
+
+    A missed decision must never be briefly claimable as queued. The unique-key
+    insert also resolves concurrent startup/cron decisions without a later
+    status update that could overwrite the winner.
+    """
+    if not isinstance(reason, str) or not reason.strip():
+        raise ValueError("A missed job requires a reason")
+    return _enqueue(kind, payload, key, missed_reason=reason)
+
+
+def _enqueue(kind: str, payload: dict, key: str, *, missed_reason: str | None = None) -> Job:
+    timestamp = now()
     with transaction() as s:
         s.execute(
             insert(Job)
             .values(
                 id=uid(),
-                created_at=now(),
+                created_at=timestamp,
                 kind=kind,
                 payload=payload,
                 logical_key=key,
-                status="queued",
+                status="missed" if missed_reason is not None else "queued",
                 attempts=0,
                 progress=0,
                 cancel_requested=False,
                 result={},
+                error=missed_reason,
+                heartbeat=timestamp if missed_reason is not None else None,
+                lease_until=None,
             )
             .on_conflict_do_nothing(index_elements=[Job.logical_key])
         )

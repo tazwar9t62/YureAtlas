@@ -7,9 +7,9 @@ from sqlalchemy import select
 
 from .config import settings
 from .db import transaction
-from .jobs import enqueue, finish
-from .tables import Experiment, Job, WorkerState, now
-from .timeutil import JST, jst_day, next_day
+from .jobs import enqueue, enqueue_missed
+from .tables import Experiment, WorkerState, now
+from .timeutil import JST, jst_day, next_day, utc
 
 
 def real_experiments():
@@ -17,8 +17,10 @@ def real_experiments():
         return list(s.scalars(select(Experiment).where(Experiment.synthetic == False)))
 
 
-def ingest_trigger():
-    timestamp = now()
+def ingest_trigger(timestamp=None):
+    if not settings.schedule_enabled:
+        return
+    timestamp = utc(timestamp if timestamp is not None else now())
     bucket = int(timestamp.timestamp() // 900)
     for experiment in real_experiments():
         if experiment.config["provider"] == "usgs":
@@ -33,21 +35,43 @@ def ingest_trigger():
             )
 
 
-def forecast_trigger():
-    start, _ = next_day(now())
+def daily_forecast_decision(experiment_id, created_at, start, timestamp):
+    """Queue the due daily window, or atomically record an absent expired one."""
+    if not settings.schedule_enabled:
+        return None
+    created_at, start, timestamp = utc(created_at), utc(start), utc(timestamp)
+    if start != jst_day(start.astimezone(JST).date())[0]:
+        raise ValueError("Scheduled daily forecasts require a JST-midnight target start")
+    if created_at >= start or timestamp < start - timedelta(minutes=20):
+        return None
+    payload = {"experiment_id": experiment_id, "start": start.isoformat(), "scheduled": True}
+    key = f"daily:{experiment_id}:{start.isoformat()}"
+    if timestamp < start:
+        return enqueue("forecast", payload, key)
+    return enqueue_missed(
+        "forecast",
+        payload,
+        key,
+        "Computer/worker unavailable before the prospective publication deadline",
+    )
+
+
+def forecast_trigger(timestamp=None):
+    if not settings.schedule_enabled:
+        return
+    timestamp = utc(timestamp if timestamp is not None else now())
+    start, _ = next_day(timestamp)
     for experiment in real_experiments():
-        enqueue(
-            "forecast",
-            {"experiment_id": experiment.id, "start": start.isoformat(), "scheduled": True},
-            f"daily:{experiment.id}:{start.isoformat()}",
-        )
+        daily_forecast_decision(experiment.id, experiment.created_at, start, timestamp)
 
 
-def evaluate_trigger(reconcile=False):
-    day = now().astimezone(JST).date().isoformat()
+def evaluate_trigger(reconcile=False, timestamp=None):
+    if not settings.schedule_enabled:
+        return
+    timestamp = utc(timestamp if timestamp is not None else now())
+    day = timestamp.astimezone(JST).date().isoformat()
     for experiment in real_experiments():
         if reconcile and experiment.config["provider"] == "usgs":
-            timestamp = now()
             enqueue(
                 "ingest",
                 {
@@ -64,44 +88,40 @@ def evaluate_trigger(reconcile=False):
         )
 
 
-def training_trigger():
+def training_trigger(timestamp=None):
+    if not settings.schedule_enabled:
+        return
+    timestamp = utc(timestamp if timestamp is not None else now())
     for experiment in real_experiments():
         enqueue(
             "train",
             {"experiment_id": experiment.id},
-            f"weekly-train:{experiment.id}:{now().astimezone(JST).date().isoformat()}",
+            f"weekly-train:{experiment.id}:{timestamp.astimezone(JST).date().isoformat()}",
         )
 
 
 def reconcile_startup(timestamp=None):
-    timestamp = timestamp or now()
+    if not settings.schedule_enabled:
+        return
+    timestamp = utc(timestamp if timestamp is not None else now())
     with transaction() as s:
         previous = s.get(WorkerState, "scheduler")
-        previous_time = previous.heartbeat if previous else timestamp - timedelta(days=1)
+        previous_time = utc(previous.heartbeat) if previous else timestamp - timedelta(days=1)
     for experiment in real_experiments():
         cursor = max(previous_time, experiment.created_at).astimezone(JST).date()
         today = timestamp.astimezone(JST).date()
         while cursor <= today:
             start, _ = jst_day(cursor)
-            if experiment.created_at < start <= timestamp:
-                key = f"daily:{experiment.id}:{start.isoformat()}"
-                with transaction() as s:
-                    exists = s.scalar(select(Job).where(Job.logical_key == key))
-                if not exists:
-                    job = enqueue(
-                        "forecast",
-                        {"experiment_id": experiment.id, "start": start.isoformat(), "scheduled": True},
-                        key,
-                    )
-                    finish(
-                        job.id,
-                        "missed",
-                        error="Computer/worker unavailable before the prospective publication deadline",
-                    )
+            if start <= timestamp:
+                daily_forecast_decision(experiment.id, experiment.created_at, start, timestamp)
             cursor += timedelta(days=1)
+        # Recover a still-eligible upcoming window independently of the old
+        # heartbeat cursor. Before 23:40 this decision deliberately does nothing.
+        upcoming, _ = next_day(timestamp)
+        daily_forecast_decision(experiment.id, experiment.created_at, upcoming, timestamp)
     # Safe catch-up work has unique keys; never enqueue a backdated forecast.
-    ingest_trigger()
-    evaluate_trigger(reconcile=True)
+    ingest_trigger(timestamp)
+    evaluate_trigger(reconcile=True, timestamp=timestamp)
 
 
 def start_scheduler():
