@@ -73,6 +73,7 @@ class Experiment(Identity, Base):
 
 class Ingestion(Identity, Base):
     __tablename__ = "ingestion_runs"
+    __table_args__ = (Index("ingestion_source_receipt_order", "source_id", "created_at", "id"),)
     source_id: Mapped[str] = mapped_column(ForeignKey("catalogue_sources.id"), index=True)
     start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     end: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
@@ -152,6 +153,9 @@ class FeatureSet(Identity, Base):
 
 class Model(Identity, Base):
     __tablename__ = "model_versions"
+    __table_args__ = (
+        Index("model_selection_order", "experiment_id", "algorithm", "status", "created_at", "id"),
+    )
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiment_versions.id"), index=True)
     algorithm: Mapped[str] = mapped_column(String)
     status: Mapped[str] = mapped_column(String)

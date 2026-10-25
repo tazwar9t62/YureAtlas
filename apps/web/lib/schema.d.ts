@@ -676,6 +676,17 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** ExperimentPrerequisites */
+        ExperimentPrerequisites: {
+            /** Experiment Id */
+            experiment_id: string;
+            /** Name */
+            name: string;
+            /** Attention Needed */
+            attention_needed: boolean;
+            source: components["schemas"]["SourcePrerequisite"];
+            model: components["schemas"]["ModelPrerequisite"];
+        };
         /** ExperimentSpec */
         ExperimentSpec: {
             /** Name */
@@ -1170,6 +1181,33 @@ export interface components {
             /** Decisions */
             decisions: components["schemas"]["PairDecision"][];
         };
+        /** ModelPrerequisite */
+        ModelPrerequisite: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "metadata_available" | "unavailable";
+            /**
+             * Policy
+             * @default forecast-selection-v1
+             */
+            policy: string;
+            /** Kind */
+            kind?: ("promotion" | "historical_rate") | null;
+            /** Model Id */
+            model_id?: string | null;
+            /** Algorithm */
+            algorithm?: string | null;
+            /** Training Cutoff */
+            training_cutoff?: string | null;
+            /** Available At */
+            available_at?: string | null;
+            /** Promotion Id */
+            promotion_id?: string | null;
+            /** Message */
+            message: string;
+        };
         /** ModelView */
         ModelView: {
             /** Id */
@@ -1370,6 +1408,35 @@ export interface components {
             /** Red Coverage */
             red_coverage: number | null;
         };
+        /** PrerequisiteReceipt */
+        PrerequisiteReceipt: {
+            /** Id */
+            id: string;
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** Status */
+            status: string;
+            /** Coverage Effect */
+            coverage_effect?: string | null;
+            /**
+             * Feed
+             * @default false
+             */
+            feed: boolean;
+        };
         /** PromotionCreated */
         PromotionCreated: {
             /** Id */
@@ -1472,6 +1539,97 @@ export interface components {
             model_id: string;
             /** Reason */
             reason: string;
+        };
+        /** ReadinessCheck */
+        ReadinessCheck: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "skipped";
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /** ReadinessChecks */
+        ReadinessChecks: {
+            database: components["schemas"]["ReadinessCheck"];
+            schema: components["schemas"]["SchemaCheck"];
+            artifacts: components["schemas"]["ReadinessCheck"];
+            worker: components["schemas"]["WorkerCheck"];
+            scheduler: components["schemas"]["SchedulerCheck"];
+        };
+        /** ReadinessPrerequisites */
+        ReadinessPrerequisites: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "unavailable" | "unknown" | "first_run" | "real_setup_needed" | "empty_scope" | "needs_attention" | "metadata_available" | "sampled";
+            /** Message */
+            message: string;
+            /**
+             * Advisory
+             * @default true
+             * @constant
+             */
+            advisory: true;
+            /**
+             * Caveat
+             * @default Advisory metadata only. The latest receipt does not establish completeness of any required interval, and model metadata does not verify artifact integrity, source freshness, or predictive readiness. Forecast execution performs its own checks.
+             */
+            caveat: string;
+            /** Checked At */
+            checked_at?: string | null;
+            /** Schedule Revision */
+            schedule_revision?: number | null;
+            /** Scope */
+            scope?: ("all_real" | "selected") | null;
+            /** Selected Experiment Ids */
+            selected_experiment_ids?: string[];
+            /**
+             * Inspection Limit
+             * @default 20
+             * @constant
+             */
+            inspection_limit: 20;
+            /**
+             * Inspected Count
+             * @default 0
+             */
+            inspected_count: number;
+            /** Has More */
+            has_more?: boolean | null;
+            /** Scope Complete */
+            scope_complete?: boolean | null;
+            /** Selection Start */
+            selection_start?: string | null;
+            /** Selection Input Cutoff */
+            selection_input_cutoff?: string | null;
+            /** Experiments */
+            experiments?: components["schemas"]["ExperimentPrerequisites"][];
+        };
+        /** ReadinessResponse */
+        ReadinessResponse: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "not_ready";
+            /**
+             * Service
+             * @default YureAtlas
+             * @constant
+             */
+            service: "YureAtlas";
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            checks: components["schemas"]["ReadinessChecks"];
+            prerequisites: components["schemas"]["ReadinessPrerequisites"];
         };
         /** ReferenceRejection */
         ReferenceRejection: {
@@ -1721,6 +1879,61 @@ export interface components {
             /** Reason */
             reason: string;
         };
+        /** SchedulerCheck */
+        SchedulerCheck: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "skipped";
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Revision */
+            revision?: number | null;
+            /** Applied Revision */
+            applied_revision?: number | null;
+            /** Observed At */
+            observed_at?: string | null;
+        };
+        /** SchemaCheck */
+        SchemaCheck: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "skipped";
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Expected */
+            expected: string;
+            /** Observed */
+            observed?: string[];
+        };
+        /** SourcePrerequisite */
+        SourcePrerequisite: {
+            /** Source Id */
+            source_id: string;
+            /** Provider */
+            provider: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "no_receipt" | "receipt_observed";
+            latest_receipt?: components["schemas"]["PrerequisiteReceipt"] | null;
+            /**
+             * Coverage Verified
+             * @default false
+             * @constant
+             */
+            coverage_verified: false;
+            /** Message */
+            message: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1733,6 +1946,19 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WorkerCheck */
+        WorkerCheck: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "skipped";
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            worker?: components["schemas"]["ScheduleWorker"] | null;
         };
     };
     responses: never;
@@ -1778,7 +2004,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Health"];
+                    "application/json": components["schemas"]["ReadinessResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessResponse"];
                 };
             };
         };

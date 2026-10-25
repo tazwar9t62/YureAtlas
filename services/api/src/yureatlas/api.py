@@ -1,7 +1,7 @@
 import json
 from datetime import timedelta
 
-from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile
 from fastapi.responses import JSONResponse
 from pydantic import AwareDatetime, BaseModel
 from sqlalchemy import func, select, text
@@ -9,14 +9,17 @@ from starlette.middleware.trustedhost import TrustedHostMiddleware
 
 from . import tables as t
 from .config import settings
-from .db import engine, transaction
+from .db import transaction
 from .eligibility import eligible_cell
 from .promotion_schemas import CurrentModelSelection, PromotionCreated, PromotionHistory, PromotionRequest
 from .promotion_state import PromotionNotFound, create_promotion, get_current_selection, get_promotion_history
+from .readiness import inspect_readiness
+from .readiness_schemas import ReadinessResponse
 from .schedule_configuration import (
     ScheduleConflict,
     get_schedule_history,
     get_schedule_status,
+    get_worker_status,
     update_schedule,
 )
 from .schedule_schemas import ScheduleHistory, ScheduleRevision, ScheduleStatus, ScheduleUpdate
@@ -59,12 +62,12 @@ def health():
     return Health(status="ok")
 
 
-@app.get("/ready", response_model=Health)
-def ready():
-    with engine.connect() as conn:
-        conn.execute(text("SELECT version_num FROM alembic_version"))
-    settings.artifact_dir.mkdir(parents=True, exist_ok=True)
-    return Health(status="ready")
+@app.get("/ready", response_model=ReadinessResponse, responses={503: {"model": ReadinessResponse}})
+def ready(response: Response):
+    result = inspect_readiness()
+    response.status_code = 200 if result.status == "ready" else 503
+    response.headers["Cache-Control"] = "no-store"
+    return result
 
 
 @app.exception_handler(ValueError)
@@ -411,14 +414,17 @@ def sources() -> dict:
                     "coverage": [{"start": a, "end": b, "status": c, "report": d} for a, b, c, d in coverage],
                 }
             )
-        worker = s.get(t.WorkerState, "scheduler")
+        worker = get_worker_status(s, s.scalar(text("SELECT clock_timestamp()")))
         return {
             "sources": result,
             "worker": {
                 "heartbeat": worker.heartbeat,
-                "online": worker.heartbeat > t.now() - timedelta(seconds=90),
+                "online": worker.status == "fresh",
+                "status": worker.status,
+                "reason": worker.reason,
+                "environment_enabled": worker.environment_enabled,
             }
-            if worker
+            if worker.status != "missing"
             else None,
             "schedule_timezone": "Asia/Tokyo",
             "schedule_enabled": settings.schedule_enabled,
