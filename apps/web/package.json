@@ -10,8 +10,9 @@
     "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
     "start": "next start --hostname 0.0.0.0",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit --incremental false",
     "generate": "openapi-typescript ../../docs/openapi.json -o lib/schema.d.ts",
+    "contract:check": "openapi-typescript ../../docs/openapi.json -o lib/schema.d.ts --check",
     "test:e2e": "playwright test"
   },
   "dependencies": {

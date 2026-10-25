@@ -35,8 +35,8 @@ Dependencies below are in addition to the sequential merge rule. Branch names ar
 
 | ID | Main task | Depends on | Status | Branch | GitHub / PR |
 | --- | --- | --- | --- | --- | --- |
-| T00 | Backlog, traceability, and review guidance | — | In review | `chore/completion-plan` | [#1](https://github.com/tazwar9t62/YureAtlas/issues/1) / [PR #4](https://github.com/tazwar9t62/YureAtlas/pull/4) |
-| T01 | Reliable isolated backend checks and CI foundation | T00 | Planned | `test/isolated-verification` | Not created |
+| T00 | Backlog, traceability, and review guidance | — | Merged | `chore/completion-plan` | [#1](https://github.com/tazwar9t62/YureAtlas/issues/1) / [PR #4](https://github.com/tazwar9t62/YureAtlas/pull/4) |
+| T01 | Reliable isolated backend checks and CI foundation | T00 | In review | `test/isolated-verification` | [#5](https://github.com/tazwar9t62/YureAtlas/issues/5) / [PR #10](https://github.com/tazwar9t62/YureAtlas/pull/10) |
 | T02 | Catalogue revisions and import coverage correctness | T01 | Planned | `fix/catalogue-reconciliation` | Not created |
 | T03 | Deterministic baseline comparisons and report scope | T02 | Planned | `fix/comparison-provenance` | Not created |
 | T04 | Prospective timing, model partitions, and scientific checks | T02, T03 | Planned | `test/scientific-invariants` | Not created |
@@ -59,11 +59,18 @@ Problem: the repository documents a paused checkpoint, but has no active issue/P
 
 Completion gate: documentation links resolve, `git diff --check` passes, and the documentation PR receives the requested clear bot review before merging.
 
-Review access: the initial requests received no bot acknowledgement/review while YureAtlas was absent from the account's Code Review repository search. The owner then explicitly authorized the ChatGPT Codex Connector for only `tazwar9t62/YureAtlas` and completed GitHub's identity confirmation. YureAtlas is now visible in Code Review settings. A fresh review of the current PR head is required; its completed outcome must be verified before merging or starting T01.
+Review outcome: after the owner authorized the connector for only YureAtlas and completed GitHub identity confirmation, Codex [completed its review without findings](https://github.com/tazwar9t62/YureAtlas/pull/4#issuecomment-6393834647) of `4685422a927b2e5f3bd8e2c9cf47e5eefbf49188`. Documentation checks and the GitGuardian check passed; there were no outstanding review threads. PR #4 merged as `473515251b40559d4b88463370ab895ec1c1e7e3`.
 
 ## T01 — Reliable isolated backend checks and CI foundation
 
 Problem: the latest checkpoint database suite failed during setup/cleanup; test commands mix different runtimes, browser tests target the main app by default, and CI is absent.
+
+| Smaller issue | Status / evidence |
+| --- | --- |
+| T01.1 [#6](https://github.com/tazwar9t62/YureAtlas/issues/6): environment diagnosis | Implemented in `43ca83a`: fresh isolated baseline 19 passed; [diagnosis](verification.md#2026-10-25-database-diagnosis-t011) |
+| T01.2 [#7](https://github.com/tazwar9t62/YureAtlas/issues/7): owned isolation and cleanup | Implemented in `62b815b`: 47 unit checks and all 4 PostGIS checks passed; ownership, failure and real descendant-process regressions included |
+| T01.3 [#8](https://github.com/tazwar9t62/YureAtlas/issues/8): independent verification commands | Implemented in `e9a4139`: lint, 47 unit + 4 PostGIS checks, TypeScript and read-only contracts passed; Webpack production build passed; local Turbopack worker-port restriction remains |
+| T01.4 [#9](https://github.com/tazwar9t62/YureAtlas/issues/9): isolated CI | Implemented in `21cd3d0`: bounded Ubuntu/PostGIS workflow with immutable action/image pins; Actionlint passed; first PR run pending |
 
 - **T01.1 — Diagnose the database environment.** Check the installed Docker daemon and PostGIS health, resource limits, and preserved volumes. Start the existing Docker application if needed. Use a uniquely named disposable database to reproduce setup failures; inspect server logs before changing limits. Record the cause or precise environment limitation. Preserve the primary database and artifacts.
 - **T01.2 — Harden test isolation and cleanup.** Use the running supported Python interpreter, explicit database/artifact ownership, and cleanup that preserves the original failure. Cover migration/test/cleanup failure paths. Remove only resources created by the current test run; report any remnants.
@@ -209,3 +216,13 @@ Pre-merge acceptance: T01–T10 are verified and merged through the requested re
 | 2026-10-25 | Completed the owner-authorized YureAtlas-only connector installation and verified the repository appears in Code Review settings. | GitHub identity confirmation was performed by the owner. Request a fresh overall review after this tracker update; no automatic-review or credit-spending preferences were changed. |
 
 Each subsequent task updates this ledger and the task board before its PR. Exact current-head review and merge evidence also lives in the linked GitHub PR/issue to avoid self-referential commit hashes in this file.
+
+T01 started from merged main `473515251b40559d4b88463370ab895ec1c1e7e3` on `test/isolated-verification`; parent #5 and smaller issues #6–#9 were created before implementation. Starting the installed Docker Desktop restored daemon access without resetting volumes. The existing disposable backend harness passed all 19 tests and cleaned its database; the historical failed-run database was preserved. Historical failure cause remains unproven.
+
+T01.2 verifies the effective database and ownership before migrations, rejects unsafe direct integration invocation, uses the current interpreter and owned temporary artifacts, revalidates resource identity before deletion, and terminates/reaps child processes before cleanup. Primary errors survive independent cleanup failures. Verification: 47 unit checks passed (including 32 new harness regressions), all 4 PostGIS checks passed, and targeted Ruff/whitespace checks passed. SIGKILL or machine loss cannot guarantee cleanup; printed resource names support later inspection. T01.3 will wire separate unit and integration commands into the default test target.
+
+T01.3 adds independent documented Make targets, supported toolchain checks, read-only OpenAPI/TypeScript drift detection, and the migration lint fix. `YUREATLAS_INTEGRATION=1 make test` correctly forced unit isolation, passed 47 unit checks and then all 4 owned PostGIS checks. Lint, TypeScript and both contract checks passed; deliberately stale temporary contracts were rejected without rewriting them, and tracked contract hashes were unchanged. The default Turbopack build remains blocked locally by an operating-system port-bind denial even with escalation; the documented Webpack production build passed compilation, types, prerendering and standalone output. T01.4 will verify the default build on GitHub's runner. Browser behavior is not claimed by these build checks.
+
+T01.4 adds PR/main CI using the same commands, a digest-pinned official PostGIS service, exact tool versions, full-commit action pins, read-only repository permissions, a 20-minute job bound, and seven-day failure logs. Unit checks use an unreachable database URL. Actionlint 1.7.12 passed. The PR's actual CI result and completed Codex review remain required before merge; this workflow does not yet run the T07 browser checks.
+
+T01 opened as [PR #10](https://github.com/tazwar9t62/YureAtlas/pull/10). Supplementary review confirmed the workflow and read-only contract behavior; a clean-checkout TypeScript simulation also passed without generated `.next` files. Overall Codex review and CI are pending; T02 has not started.
