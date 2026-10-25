@@ -35,7 +35,7 @@ Dependencies below are in addition to the sequential merge rule. Branch names ar
 
 | ID | Main task | Depends on | Status | Branch | GitHub / PR |
 | --- | --- | --- | --- | --- | --- |
-| T00 | Backlog, traceability, and review guidance | — | In progress | `chore/completion-plan` | [#1](https://github.com/tazwar9t62/YureAtlas/issues/1) / pending |
+| T00 | Backlog, traceability, and review guidance | — | In review | `chore/completion-plan` | [#1](https://github.com/tazwar9t62/YureAtlas/issues/1) / [PR #4](https://github.com/tazwar9t62/YureAtlas/pull/4) |
 | T01 | Reliable isolated backend checks and CI foundation | T00 | Planned | `test/isolated-verification` | Not created |
 | T02 | Catalogue revisions and import coverage correctness | T01 | Planned | `fix/catalogue-reconciliation` | Not created |
 | T03 | Deterministic baseline comparisons and report scope | T02 | Planned | `fix/comparison-provenance` | Not created |
@@ -55,7 +55,7 @@ Problem: the repository documents a paused checkpoint, but has no active issue/P
 | Smaller issue | Acceptance | Status / commit |
 | --- | --- | --- |
 | T00.1 [#2](https://github.com/tazwar9t62/YureAtlas/issues/2): detailed backlog | Ordered tasks cover audit findings and unfinished brief requirements; each has issue-sized work, dependencies, and concrete checks; current and historical evidence are distinct. | Implemented in `e866d54` |
-| T00.2 [#3](https://github.com/tazwar9t62/YureAtlas/issues/3): documentation navigation and review guidance | README, handoff, and build record link to this tracker; dated historical evidence is preserved; concise review rules protect immutable history, temporal validity, source separation, and honest status. | Implemented; commit recorded in issue/PR |
+| T00.2 [#3](https://github.com/tazwar9t62/YureAtlas/issues/3): documentation navigation and review guidance | README, handoff, and build record link to this tracker; dated historical evidence is preserved; concise review rules protect immutable history, temporal validity, source separation, and honest status. | Implemented in `cea17c6` |
 
 Completion gate: documentation links resolve, `git diff --check` passes, and the documentation PR receives the requested clear bot review before merging.
 
@@ -179,7 +179,7 @@ Acceptance: old experiment hashes and forecasts are unchanged after new settings
 - **T11.3 — Complete operating documentation.** Expand README with exact setup/demo/real/daily/shutdown/restart/troubleshooting commands. Document native versus Compose artifact storage, schedule precedence, promotion, source limitations, import formats, backup target selection, persistent restore commands and recovery. Update architecture/protocol/model/source docs to match the implementation.
 - **T11.4 — Publish the final evidence report.** Record commands, environment, results, issue/commit/PR/review/merge links, screenshots where useful, remaining external limitations, and reproduction instructions in `docs/completion-report.md`. Refresh contract checks and ensure a clean tracked tree.
 
-Acceptance: all engineering acceptance items above are verified and merged through the requested review loop; required checks are green; no historical failure is silently relabeled as passed; unresolved environment or scientific dependencies are explicitly named. Do not state that all work is complete while required tasks are blocked.
+Pre-merge acceptance: T01–T10 are verified and merged through the requested review loop; T11 implementation and required checks are complete and green; no historical failure is silently relabeled as passed; unresolved environment or scientific dependencies are explicitly named. T11's own review and merge are recorded afterward as described in delivery rule 8. Do not state that all work is complete while required tasks are blocked.
 
 ## Verification baseline
 
@@ -201,5 +201,6 @@ Acceptance: all engineering acceptance items above are verified and merged throu
 | 2026-10-25 | GitHub connector issue creation returned integration HTTP 403. | Existing authenticated GitHub CLI provides the authorized write fallback; connector reads remain usable. |
 | 2026-10-25 | T00.1 implemented: detailed backlog, status definitions, review gates, and baseline evidence. | Relative links and all 12 main-task sections checked; whitespace check passed. |
 | 2026-10-25 | T00.2 implemented: README/handoff/build record navigation and focused repository review guidance. | Documentation-only changes; current application verification remains at the baseline above. PR/review pending. |
+| 2026-10-25 | T00 opened as PR #4 with separate issue commits. | Supplementary local review found no blocking issue; clarified T11's pre-merge versus post-merge reporting. GitHub Codex review is still required. |
 
 Each subsequent task updates this ledger and the task board before its PR. Exact current-head review and merge evidence also lives in the linked GitHub PR/issue to avoid self-referential commit hashes in this file.
