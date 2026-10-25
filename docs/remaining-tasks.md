@@ -38,8 +38,8 @@ Dependencies below are in addition to the sequential merge rule. Branch names ar
 | T00 | Backlog, traceability, and review guidance | — | Merged | `chore/completion-plan` | [#1](https://github.com/tazwar9t62/YureAtlas/issues/1) / [PR #4](https://github.com/tazwar9t62/YureAtlas/pull/4) |
 | T01 | Reliable isolated backend checks and CI foundation | T00 | Merged | `test/isolated-verification` | [#5](https://github.com/tazwar9t62/YureAtlas/issues/5) / [PR #10](https://github.com/tazwar9t62/YureAtlas/pull/10) |
 | T02 | Catalogue revisions and import coverage correctness | T01 | Merged | `fix/catalogue-reconciliation` | [#11](https://github.com/tazwar9t62/YureAtlas/issues/11) / [PR #16](https://github.com/tazwar9t62/YureAtlas/pull/16) |
-| T03 | Deterministic baseline comparisons and report scope | T02 | In review | `fix/comparison-provenance` | [#17](https://github.com/tazwar9t62/YureAtlas/issues/17) / [PR #23](https://github.com/tazwar9t62/YureAtlas/pull/23) |
-| T04 | Prospective timing, model partitions, and scientific checks | T02, T03 | Planned | `test/scientific-invariants` | Not created |
+| T03 | Deterministic baseline comparisons and report scope | T02 | Merged | `fix/comparison-provenance` | [#17](https://github.com/tazwar9t62/YureAtlas/issues/17) / [PR #23](https://github.com/tazwar9t62/YureAtlas/pull/23) |
+| T04 | Prospective timing, model partitions, and scientific checks | T02, T03 | In progress | `test/scientific-invariants` | [#24](https://github.com/tazwar9t62/YureAtlas/issues/24); PR pending |
 | T05 | Worker scheduling, recovery, and operational readiness | T01, T04 | Planned | `fix/worker-recovery` | Not created |
 | T06 | Complete native/Compose backups and persistent restores | T01, T05 | Planned | `fix/backup-restore` | Not created |
 | T07 | Dashboard correctness, map rendering, and browser harness | T03, T05 | Planned | `fix/dashboard-acceptance` | Not created |
@@ -120,6 +120,14 @@ Acceptance: swapping database row order does not change pairs or scores; hand-ca
 ## T04 — Temporal and scientific invariants
 
 Problem: the test named for late prospective publication currently fails earlier on synthetic/real mode mismatch. Actual training partitions, availability, and ETAS likelihood need stronger independent checks.
+
+| Smaller issue | Status / evidence |
+| --- | --- |
+| T04.1 [#25](https://github.com/tazwar9t62/YureAtlas/issues/25): prospective receipt and publication boundaries | Implemented in this issue's commit: 335 unit + all 95 PostGIS tests, populated migrations, lint/types/contracts passed |
+| T04.2 [#26](https://github.com/tazwar9t62/YureAtlas/issues/26): fitted windows and saved metadata | Planned |
+| T04.3 [#27](https://github.com/tazwar9t62/YureAtlas/issues/27): chronological training and artifact round trips | Planned |
+| T04.4 [#28](https://github.com/tazwar9t62/YureAtlas/issues/28): ETAS mathematics, simulation and failure paths | Planned |
+| T04.5 [#29](https://github.com/tazwar9t62/YureAtlas/issues/29): scientific scope and evidence | Planned |
 
 - **T04.1 — Test actual prospective boundaries.** Require eligible receipt-time snapshots and coverage as of the declared input cutoff; reject unavailable artifacts, invalid future cutoffs, late starts, and computations crossing the publication deadline. A successful retry must not duplicate publication.
 - **T04.2 — Align fitted windows and saved metadata.** Check rate warmup/fitting boundaries, ETAS history truncation versus configured fit duration, ML tuning, separate calibration, and hybrid weights. Metadata must describe the data actually used.
@@ -260,3 +268,5 @@ T02 opened as [PR #16](https://github.com/tazwar9t62/YureAtlas/pull/16) with sep
 T02 subsequently cleared [Codex review without findings](https://github.com/tazwar9t62/YureAtlas/pull/16#issuecomment-6394696919) at `b6693d44193bc09e5ae6bbd31fe7dca0f42fd932`. [CI passed](https://github.com/tazwar9t62/YureAtlas/actions/runs/40171345947), including 239 unit checks, all 49 PostGIS checks, populated migrations, lint, TypeScript, contracts and the default production build; GitGuardian also passed. No actionable review threads remained. PR #16 merged as `40497f22cf6b5e781567343514ac40dc229f14ff`, and issues #11–#15 closed. T03 starts from that updated main on `fix/comparison-provenance`; parent #17 and smaller issues #18–#21 were created before implementation.
 
 T03 opened as [PR #23](https://github.com/tazwar9t62/YureAtlas/pull/23) with separate commits for #18–#21 and the final-review follow-up #22, which was created before its implementation. The report now uses deterministic compatible references, matched pooled scores/uncertainty, bounded coherent scopes and exact displayed-report downloads. Verification: 335 unit tests, all 63 PostGIS tests, 10 isolated production browser mocks, lint, TypeScript, read-only contracts and Webpack build passed. Supplementary reviews are clear. The local Turbopack worker-port restriction and existing development map worker failure remain explicitly documented; full-stack/map acceptance stays in T07/T11. Requested overall Codex review and exact-head CI are pending; T04 implementation has not started.
+
+T03 subsequently cleared [Codex review without findings](https://github.com/tazwar9t62/YureAtlas/pull/23#issuecomment-6395351875) at `50e0605bcf712803750a05dfda23d8d14f172a75`. [CI passed](https://github.com/tazwar9t62/YureAtlas/actions/runs/40176178580), including the default production build and populated migrations; GitGuardian also passed. No actionable review threads remained. PR #23 merged as `39062a3bc654a9512051d4ca5b02254e0728d654`, and issues #17–#22 closed. T04 starts from that updated main on `test/scientific-invariants`; parent #24 and smaller issues #25–#29 were created before implementation. Initial read-only preparation confirmed coverage uses issuance time instead of input cutoff, and the final application deadline check precedes lock waits and publication work. These are the first issue's targets.

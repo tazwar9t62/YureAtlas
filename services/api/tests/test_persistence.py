@@ -96,7 +96,7 @@ def test_atomic_immutable_forecast_and_versioned_evaluation(experiment):
         assert s.get(Evaluation, first.id).metrics == first.metrics
 
 
-def test_late_prospective_is_rejected(experiment):
+def test_synthetic_experiment_rejects_real_forecast_mode(experiment):
     with pytest.raises(ValueError, match="Synthetic and real"):
         issue_forecast(experiment.id, "unknown", now() - timedelta(days=1))
 
