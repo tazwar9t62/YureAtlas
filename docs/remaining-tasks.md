@@ -35,7 +35,7 @@ Dependencies below are in addition to the sequential merge rule. Branch names ar
 
 | ID | Main task | Depends on | Status | Branch | GitHub / PR |
 | --- | --- | --- | --- | --- | --- |
-| T00 | Backlog, traceability, and review guidance | — | In review | `chore/completion-plan` | [#1](https://github.com/tazwar9t62/YureAtlas/issues/1) / [PR #4](https://github.com/tazwar9t62/YureAtlas/pull/4) |
+| T00 | Backlog, traceability, and review guidance | — | Blocked: Codex review access | `chore/completion-plan` | [#1](https://github.com/tazwar9t62/YureAtlas/issues/1) / [PR #4](https://github.com/tazwar9t62/YureAtlas/pull/4) |
 | T01 | Reliable isolated backend checks and CI foundation | T00 | Planned | `test/isolated-verification` | Not created |
 | T02 | Catalogue revisions and import coverage correctness | T01 | Planned | `fix/catalogue-reconciliation` | Not created |
 | T03 | Deterministic baseline comparisons and report scope | T02 | Planned | `fix/comparison-provenance` | Not created |
@@ -58,6 +58,8 @@ Problem: the repository documents a paused checkpoint, but has no active issue/P
 | T00.2 [#3](https://github.com/tazwar9t62/YureAtlas/issues/3): documentation navigation and review guidance | README, handoff, and build record link to this tracker; dated historical evidence is preserved; concise review rules protect immutable history, temporal validity, source separation, and honest status. | Implemented in `cea17c6` |
 
 Completion gate: documentation links resolve, `git diff --check` passes, and the documentation PR receives the requested clear bot review before merging.
+
+Current blocker: the review request on PR #4 has no bot acknowledgement/review, and a search in the current account's Codex Code Review settings does not list `tazwar9t62/YureAtlas`. GitHub requires the account owner's passkey/security-key authentication before its app authorizations can be inspected further. The owner has been asked to make only this repository available to Codex review. No review settings or app permissions were changed. After access is available, request a review of the then-current PR head and verify its completed outcome before merging or starting T01.
 
 ## T01 — Reliable isolated backend checks and CI foundation
 
@@ -202,5 +204,6 @@ Pre-merge acceptance: T01–T10 are verified and merged through the requested re
 | 2026-10-25 | T00.1 implemented: detailed backlog, status definitions, review gates, and baseline evidence. | Relative links and all 12 main-task sections checked; whitespace check passed. |
 | 2026-10-25 | T00.2 implemented: README/handoff/build record navigation and focused repository review guidance. | Documentation-only changes; current application verification remains at the baseline above. PR/review pending. |
 | 2026-10-25 | T00 opened as PR #4 with separate issue commits. | Supplementary local review found no blocking issue; clarified T11's pre-merge versus post-merge reporting. GitHub Codex review is still required. |
+| 2026-10-25 | Requested overall Codex review on PR #4 at `1f880c3`; no acknowledgement/review observed. | YureAtlas was absent from the account's Code Review repository search. GitHub app authorization inspection reached owner authentication. User setup requested; task remains unmerged and T01 has not started. |
 
 Each subsequent task updates this ledger and the task board before its PR. Exact current-head review and merge evidence also lives in the linked GitHub PR/issue to avoid self-referential commit hashes in this file.
