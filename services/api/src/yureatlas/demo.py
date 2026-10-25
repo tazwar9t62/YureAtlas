@@ -104,7 +104,7 @@ def seed_catalogue(progress=lambda p: None):
             [changed],
             changed["origin_time"],
             changed["origin_time"] + timedelta(seconds=1),
-            {"synthetic_revision": True},
+            {"synthetic_revision": True, "coverage_effect": "supplement"},
             received_at=DEMO_END + timedelta(days=3),
             status="partial",
         )

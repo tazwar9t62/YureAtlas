@@ -1,6 +1,8 @@
 """Source-isolated revisions and reproducible receipt-time snapshots."""
 
+import heapq
 from datetime import datetime
+from itertools import pairwise
 
 import numpy as np
 from geoalchemy2.shape import from_shape
@@ -357,25 +359,76 @@ def make_snapshot(
         return s.scalar(select(Snapshot).where(Snapshot.digest == checksum)), rows
 
 
+def coverage_complete(runs, start: datetime, end: datetime) -> bool:
+    """Overlay authoritative attempts; later uncertainty supersedes earlier coverage.
+
+    Feed deliveries and individual correction receipts are supplemental evidence,
+    not attempts to establish interval coverage. For each elementary interval the
+    latest authoritative attempt must be complete. Equal receipt-time ambiguity
+    fails closed. The sweep is O(n log n), without expanding into time bins.
+    """
+    if start >= end:
+        return False
+    attempts = sorted(
+        (
+            r
+            for r in runs
+            if r.start < end
+            and r.end > start
+            and r.start < r.end
+            and not r.report.get("feed")
+            and not r.report.get("synthetic_revision")
+            and r.report.get("coverage_effect") != "supplement"
+        ),
+        key=lambda r: (r.created_at, r.status != "complete", r.id),
+    )
+    boundaries = {start: [], end: []}
+    for index, run in enumerate(attempts):
+        boundaries.setdefault(max(start, run.start), []).append((index, True))
+        boundaries.setdefault(min(end, run.end), []).append((index, False))
+    active = set()
+    latest = []
+    for left, _right in pairwise(sorted(boundaries)):
+        for index, begins in boundaries[left]:
+            if begins:
+                active.add(index)
+                heapq.heappush(latest, -index)
+            else:
+                active.discard(index)
+        while latest and -latest[0] not in active:
+            heapq.heappop(latest)
+        if not latest or attempts[-latest[0]].status != "complete":
+            return False
+    return True
+
+
 def has_coverage(source_id: str, start: datetime, end: datetime, cutoff: datetime | None = None) -> bool:
     with transaction() as s:
-        query = select(Ingestion).where(
+        # Coverage checks run for many model windows; do not load every raw
+        # request manifest and rejection sample just to inspect three flags.
+        query = select(
+            Ingestion.id,
+            Ingestion.start,
+            Ingestion.end,
+            Ingestion.created_at,
+            Ingestion.status,
+            func.jsonb_build_object(
+                "feed",
+                Ingestion.report["feed"],
+                "synthetic_revision",
+                Ingestion.report["synthetic_revision"],
+                "coverage_effect",
+                Ingestion.report["coverage_effect"],
+            ).label("report"),
+        ).where(
             Ingestion.source_id == source_id,
-            Ingestion.status == "complete",
             Ingestion.start < end,
             Ingestion.end > start,
         )
-        if cutoff:
+        if cutoff is not None:
             query = query.where(Ingestion.created_at <= cutoff)
-        runs = s.scalars(query.order_by(Ingestion.start)).all()
-    cursor = start
-    for run in runs:
-        if run.start > cursor:
-            break
-        cursor = max(cursor, run.end)
-        if cursor >= end:
-            return True
-    return False
+        runs = s.execute(query).all()
+    return coverage_complete(runs, start, end)
 
 
 def event_arrays(rows, grid: StudyGrid, config: dict):

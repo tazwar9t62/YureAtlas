@@ -157,14 +157,28 @@ def test_feed_keeps_known_reclassification_without_discovering_explosions(grid, 
     monkeypatch.setattr(
         ingestion,
         "USGS",
-        lambda: SimpleNamespace(feed=lambda: ((rows, []), "raw"), retrieve=lambda *a: iter(())),
+        lambda **kw: SimpleNamespace(
+            requests=[],
+            feed=lambda: (rows, {"raw_ref": "raw", "received_at": START.isoformat(), "rejected_count": 0}),
+            retrieve=lambda a, b, *args: iter(
+                [(a, b, [], {"rejected_count": 0, "received_at": START.isoformat()})]
+            ),
+            retrieve_id=lambda identity: (rows[0], {"received_at": START.isoformat()}),
+            close=lambda: None,
+            budget_report=dict,
+        ),
     )
+    monkeypatch.setattr(ingestion, "known_ids_for_interval", lambda *a: ([], False))
     persisted = []
     monkeypatch.setattr(
-        ingestion, "ingest_records", lambda source, records, *a, **kw: persisted.extend(records)
+        ingestion,
+        "ingest_records",
+        lambda source, records, *a, **kw: (
+            persisted.extend(records) or {"added": len(records), "duplicate": 0}
+        ),
     )
     ingestion.ingest_usgs("experiment", START, START + timedelta(days=1), use_feed=True)
-    assert persisted == [rows[0]]
+    assert persisted == [rows[0], rows[0]]  # Feed evidence and authoritative ID correction.
 
 
 @pytest.mark.parametrize("change", ["agency", "event_type", "magnitude_type", "hypocentre"])
