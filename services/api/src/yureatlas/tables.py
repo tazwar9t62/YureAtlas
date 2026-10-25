@@ -222,6 +222,9 @@ class Job(Identity, Base):
     cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     result: Mapped[dict] = mapped_column(JSONB, default=dict)
+    attempt_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    worker_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    __table_args__ = (CheckConstraint("(attempt_token IS NULL) = (worker_token IS NULL)"),)
 
 
 class Promotion(Identity, Base):

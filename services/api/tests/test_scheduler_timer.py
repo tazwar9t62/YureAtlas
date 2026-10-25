@@ -4,10 +4,10 @@ import logging
 import threading
 from contextlib import contextmanager
 from datetime import timedelta
-from types import SimpleNamespace
 
 import pytest
 from yureatlas import scheduling, worker
+from yureatlas.execution import WorkerOwner, current_execution
 from yureatlas.timeutil import utc
 
 
@@ -88,23 +88,21 @@ def test_worker_waits_for_active_reconciliation_before_releasing_singleton(monke
     failures = []
     timers = []
     attempts = []
+    passed_owners = []
+    expected_owner = WorkerOwner("test-worker", 123, utc("2025-01-01T00:00:00Z"))
     primary_error = RuntimeError("Stop the worker after its first job check")
 
     @contextmanager
-    def connect():
+    def worker_session():
         order.append("singleton_acquired")
         try:
-            yield SimpleNamespace(scalar=lambda _statement: True)
+            yield expected_owner
         finally:
             order.append("singleton_released")
             singleton_released.set()
 
-    @contextmanager
-    def transaction():
-        yield SimpleNamespace(execute=lambda _statement: None)
-
     def reconcile():
-        attempts.append(None)
+        attempts.append(current_execution())
         if len(attempts) == 1:
             return  # The immediate startup pass finishes normally.
         order.append("reconciliation_started")
@@ -115,8 +113,9 @@ def test_worker_waits_for_active_reconciliation_before_releasing_singleton(monke
 
     original_start = scheduling.start_scheduler
 
-    def start_scheduler():
-        timer = original_start()
+    def start_scheduler(*, owner):
+        passed_owners.append(owner)
+        timer = original_start(owner=owner)
         timers.append(timer)
         original_shutdown = timer.shutdown
 
@@ -129,7 +128,8 @@ def test_worker_waits_for_active_reconciliation_before_releasing_singleton(monke
         timer.shutdown = shutdown
         return timer
 
-    def run_once():
+    def run_once(owner):
+        passed_owners.append(owner)
         if not active.wait(5):
             raise RuntimeError("Scheduler never began the concurrent reconciliation")
         raise primary_error
@@ -142,8 +142,7 @@ def test_worker_waits_for_active_reconciliation_before_releasing_singleton(monke
         finally:
             worker_done.set()
 
-    monkeypatch.setattr(worker, "engine", SimpleNamespace(connect=connect))
-    monkeypatch.setattr(worker, "transaction", transaction)
+    monkeypatch.setattr(worker, "worker_session", worker_session)
     monkeypatch.setattr(worker, "run_once", run_once)
     monkeypatch.setattr(scheduling, "reconcile", reconcile)
     monkeypatch.setattr(scheduling, "start_scheduler", start_scheduler)
@@ -162,6 +161,10 @@ def test_worker_waits_for_active_reconciliation_before_releasing_singleton(monke
             timer.shutdown(wait=True)
     assert not running_worker.is_alive()
     assert failures == [primary_error]
+    assert passed_owners == [expected_owner, expected_owner]
+    assert len(attempts) == 2
+    assert all(scope.owner is expected_owner and scope.job_id is None for scope in attempts)
+    assert current_execution() is None
     assert order[:6] == [
         "singleton_acquired",
         "reconciliation_started",

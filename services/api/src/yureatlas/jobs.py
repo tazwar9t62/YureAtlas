@@ -1,14 +1,22 @@
+import math
 from datetime import timedelta
+from numbers import Real
 
-from sqlalchemy import or_, select, update
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert
 
-from .db import transaction
-from .tables import Job, now, uid
+from .db import Session, transaction
+from .execution import (
+    Cancelled,  # noqa: F401 - preserve the public exception used by providers
+    JobOwnershipLost,
+    verify_attempt,
+    verify_worker,
+)
+from .tables import Job, WorkerState, now, uid
 
-
-class Cancelled(Exception):
-    pass
+LEASE_DURATION = timedelta(minutes=2)
+MAX_ATTEMPTS = 3
+CLAIM_BATCH = 100
 
 
 def enqueue(kind: str, payload: dict, key: str, *, session=None) -> Job:
@@ -75,52 +83,116 @@ def enqueue_batch(plans: list[dict], *, session) -> list[str]:
     return inserted
 
 
-def claim() -> Job | None:
-    with transaction() as s:
-        # Retries preserve the logical job key and every publication has its own
-        # unique key. Expired leases may be safely reclaimed after process death.
-        job = s.scalar(
+def claim(owner) -> Job | None:
+    # Control transactions deliberately use their explicit owner checks rather
+    # than recursively applying a dispatch context's final commit guard.
+    with Session.begin() as s:
+        worker = verify_worker(s, owner)
+        candidates = s.scalars(
             select(Job)
-            .where(or_(Job.status == "queued", (Job.status == "running") & (Job.lease_until < now())))
-            .order_by(Job.created_at)
+            .where(
+                or_(
+                    Job.status == "queued",
+                    (Job.status == "running")
+                    & or_(Job.lease_until.is_(None), Job.lease_until <= func.clock_timestamp()),
+                )
+            )
+            .order_by(Job.created_at, Job.id)
             .with_for_update(skip_locked=True)
-            .limit(1)
+            .limit(CLAIM_BATCH)
         )
-        if not job:
-            return None
-        if job.cancel_requested or job.attempts >= 3:
-            job.status = "cancelled" if job.cancel_requested else "failed"
-            job.error = "Cancelled" if job.cancel_requested else "Lease recovery retry limit reached"
-            return None
-        job.status = "running"
-        job.attempts += 1
-        job.heartbeat = now()
-        job.lease_until = now() + timedelta(minutes=2)
+        timestamp = s.scalar(select(func.clock_timestamp()))
+        worker.heartbeat = timestamp
+        worker.details = {**worker.details, "active_job": None}
+        for job in candidates:
+            if job.cancel_requested or job.attempts >= MAX_ATTEMPTS:
+                job.status = "cancelled" if job.cancel_requested else "failed"
+                job.error = "Cancelled" if job.cancel_requested else "Lease recovery retry limit reached"
+                job.heartbeat = timestamp
+                job.lease_until = None
+                continue
+            job.status = "running"
+            job.attempts += 1
+            job.attempt_token = uid()
+            job.worker_token = owner.token
+            job.heartbeat = timestamp
+            job.lease_until = timestamp + LEASE_DURATION
+            job.error = None
+            job.result = {}
+            job.progress = 0
+            worker.details = {**worker.details, "active_job": job.id}
+            return job
+        return None
+
+
+def checkpoint(job_id: str, attempt_token: str, owner, progress: float | None = None):
+    if progress is not None and (
+        isinstance(progress, bool) or not isinstance(progress, Real) or not math.isfinite(progress)
+    ):
+        raise ValueError("Progress must be a finite number")
+    with Session.begin() as s:
+        job = verify_attempt(s, job_id, attempt_token, owner)
+        timestamp = s.scalar(select(func.clock_timestamp()))
+        job.heartbeat = timestamp
+        job.lease_until = timestamp + LEASE_DURATION
+        if progress is not None:
+            job.progress = float(min(1, max(0, progress)))
+        # verify_attempt already locked this worker row before the job row.
+        worker = s.get(WorkerState, "scheduler")
+        worker.heartbeat = timestamp
+        worker.details = {**worker.details, "active_job": job.id}
         return job
 
 
-def checkpoint(job_id: str, progress: float | None = None):
-    with transaction() as s:
-        job = s.get(Job, job_id)
-        if job.cancel_requested:
-            raise Cancelled("Cancellation requested")
-        job.heartbeat = now()
-        job.lease_until = now() + timedelta(minutes=2)
-        if progress is not None:
-            job.progress = min(1, max(0, progress))
+def finish(
+    job_id: str,
+    attempt_token: str,
+    owner,
+    status: str,
+    result: dict | None = None,
+    error: str | None = None,
+):
+    if status not in {"completed", "failed", "cancelled", "missed"}:
+        raise ValueError("A finished job requires a terminal status")
+    with Session.begin() as s:
+        job = verify_attempt(s, job_id, attempt_token, owner, allow_cancelled=True, require_lease=False)
+        timestamp = s.scalar(select(func.clock_timestamp()))
+        if job.cancel_requested or status == "cancelled":
+            status, result = "cancelled", None
+            error = "Cancellation requested; earlier committed work is retained"
+            job.cancel_requested = True
+        elif job.lease_until is None or job.lease_until <= timestamp:
+            raise JobOwnershipLost("Job lease expired before completion; this attempt cannot finish it")
+        job.status = status
+        job.result = result or {}
+        job.error = error
+        job.heartbeat = timestamp
+        job.lease_until = None
+        if status == "completed":
+            job.progress = 1
+        worker = s.get(WorkerState, "scheduler")
+        worker.heartbeat = timestamp
+        worker.details = {**worker.details, "active_job": None}
+        return job
 
 
-def finish(job_id: str, status: str, result: dict | None = None, error: str | None = None):
-    with transaction() as s:
-        s.execute(
-            update(Job)
-            .where(Job.id == job_id)
-            .values(
-                status=status,
-                result=result or {},
-                error=error,
-                heartbeat=now(),
-                lease_until=None,
-                progress=1 if status == "completed" else 0,
-            )
-        )
+def request_cancel(job_id: str) -> Job | None:
+    with Session.begin() as s:
+        job = s.scalar(select(Job).where(Job.id == job_id).with_for_update())
+        if job is None or job.status not in {"queued", "running"}:
+            return job
+        job.cancel_requested = True
+        if job.status == "queued":
+            job.status = "cancelled"
+            job.error = "Cancelled before execution"
+            job.heartbeat = s.scalar(select(func.clock_timestamp()))
+            job.lease_until = None
+        return job
+
+
+def worker_heartbeat(owner, active_job: str | None = None):
+    with Session.begin() as s:
+        worker = verify_worker(s, owner)
+        worker.heartbeat = s.scalar(select(func.clock_timestamp()))
+        worker.details = dict(worker.details, active_job=active_job)
+        return worker

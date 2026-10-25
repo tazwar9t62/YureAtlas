@@ -146,8 +146,8 @@ Problem: restarting after 23:40 but before midnight skips a still-eligible daily
 | Smaller issue | Status / evidence |
 | --- | --- |
 | T05.1 [#32](https://github.com/tazwar9t62/YureAtlas/issues/32): eligible daily restart recovery | Implemented in `028ac7a`: 556 unit + all 116 PostGIS tests, lint/types/contracts passed |
-| T05.2 [#33](https://github.com/tazwar9t62/YureAtlas/issues/33): durable live reconciliation | Implemented: 577 unit + all 126 PostGIS tests, populated migrations, lint/types/contracts passed |
-| T05.3a [#34](https://github.com/tazwar9t62/YureAtlas/issues/34): ownership and cancellation | Planned |
+| T05.2 [#33](https://github.com/tazwar9t62/YureAtlas/issues/33): durable live reconciliation | Implemented in `b63966d`: 577 unit + all 126 PostGIS tests, populated migrations, lint/types/contracts passed |
+| T05.3a [#34](https://github.com/tazwar9t62/YureAtlas/issues/34): ownership and cancellation | Implemented: 584 unit + all 154 PostGIS tests, populated migrations, lint/types/contracts passed |
 | T05.3b [#35](https://github.com/tazwar9t62/YureAtlas/issues/35): stable forecast execution and retry identity | Planned |
 | T05.4 [#36](https://github.com/tazwar9t62/YureAtlas/issues/36): persisted schedules and promotion state | Planned |
 | T05.5 [#37](https://github.com/tazwar9t62/YureAtlas/issues/37): structured readiness | Planned |

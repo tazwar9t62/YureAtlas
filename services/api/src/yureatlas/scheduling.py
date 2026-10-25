@@ -3,12 +3,14 @@
 import logging
 import threading
 from collections import Counter
+from contextlib import nullcontext
 from datetime import timedelta
 
 from sqlalchemy import select, text
 
 from .config import settings
 from .db import transaction
+from .execution import WorkerOwnershipLost, execution_scope
 from .jobs import enqueue, enqueue_batch, enqueue_missed
 from .tables import Experiment, SchedulerState, now
 from .timeutil import JST, jst_day, next_day, utc
@@ -266,14 +268,18 @@ def reconcile_startup(timestamp=None):
 class ReconciliationWatchdog:
     """A monotonic wait wakes wall-clock reconciliation even after clock changes."""
 
-    def __init__(self):
+    def __init__(self, owner=None):
+        self._owner = owner
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="yureatlas-scheduler", daemon=True)
 
-    @staticmethod
-    def _check():
+    def _check(self):
         try:
-            reconcile()
+            with execution_scope(self._owner) if self._owner is not None else nullcontext():
+                reconcile()
+        except WorkerOwnershipLost:
+            self._stop.set()
+            log.exception("Schedule reconciliation stopped because worker ownership was lost")
         except Exception:
             log.exception("Schedule reconciliation failed; durable cursor unchanged")
 
@@ -294,7 +300,7 @@ class ReconciliationWatchdog:
             self._thread.join()
 
 
-def start_scheduler():
+def start_scheduler(owner=None):
     if not settings.schedule_enabled:
         return None
-    return ReconciliationWatchdog().start()
+    return ReconciliationWatchdog(owner).start()

@@ -284,13 +284,12 @@ def job_detail(job_id: str):
 
 @app.post("/jobs/{job_id}/cancel", response_model=JobView)
 def cancel_job(job_id: str):
-    with transaction() as s:
-        job = s.get(t.Job, job_id)
-        if not job:
-            raise HTTPException(404, "Unknown job")
-        if job.status in {"queued", "running"}:
-            job.cancel_requested = True
-        return view(job, JobView)
+    from .jobs import request_cancel
+
+    job = request_cancel(job_id)
+    if job is None:
+        raise HTTPException(404, "Unknown job")
+    return view(job, JobView)
 
 
 def submit(kind: str, body: JobRequest):
