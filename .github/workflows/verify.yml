@@ -1,0 +1,92 @@
+name: Verification
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verification-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: postgresql+psycopg://postgres:ci_only@127.0.0.1:5432/postgres
+      ARTIFACT_DIR: ${{ github.workspace }}/data/ci-artifacts
+      SCHEDULE_ENABLED: "false"
+      PYTHONUNBUFFERED: "1"
+      OMP_NUM_THREADS: "2"
+      OPENBLAS_NUM_THREADS: "2"
+      NEXT_TELEMETRY_DISABLED: "1"
+    services:
+      postgis:
+        # Official 17-3.6 multi-platform image, pinned to its registry manifest.
+        image: postgis/postgis:17-3.6@sha256:5cf98659a260df8b9a5123ea9a9150e317c34d8669045f0f937941c6dadb1f64
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: ci_only
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version-file: .python-version
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+      - name: Install locked dependencies
+        run: |
+          python -m pip install uv==0.12.20
+          uv sync --frozen
+          npm install --global pnpm@10.33.0
+          pnpm --dir apps/web install --frozen-lockfile
+          mkdir -p verification-logs
+      - name: Lint
+        run: make lint 2>&1 | tee verification-logs/lint.log
+      - name: Unit checks without a database
+        env:
+          DATABASE_URL: postgresql+psycopg://unused@127.0.0.1:1/no_database
+        run: make test-unit 2>&1 | tee verification-logs/unit.log
+      - name: Owned PostGIS integration checks
+        run: make test-integration 2>&1 | tee verification-logs/integration.log
+      - name: TypeScript
+        run: make typecheck 2>&1 | tee verification-logs/typecheck.log
+      - name: Read-only contract checks
+        run: |
+          make contract-check 2>&1 | tee verification-logs/contracts.log
+          git diff --exit-code -- docs/openapi.json apps/web/lib/schema.d.ts
+      - name: Default production build
+        run: make build 2>&1 | tee verification-logs/build.log
+      - name: Capture PostGIS failure logs
+        if: failure()
+        run: |
+          mkdir -p verification-logs
+          docker logs '${{ job.services.postgis.id }}' > verification-logs/postgis.log 2>&1 || true
+      - name: Retain failure evidence
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: verification-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: verification-logs/
+          retention-days: 7
+          if-no-files-found: ignore
