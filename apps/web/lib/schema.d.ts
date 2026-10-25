@@ -467,6 +467,21 @@ export interface components {
              * @default jma
              */
             format: string;
+            /**
+             * Mapping
+             * @default {}
+             */
+            mapping: string;
+            /**
+             * Coverage Declared
+             * @default false
+             */
+            coverage_declared: boolean;
+            /**
+             * Submission Id
+             * @default
+             */
+            submission_id: string;
             /** File */
             file: string;
         };
@@ -499,6 +514,8 @@ export interface components {
              * @enum {string}
              */
             provider: "usgs" | "jma" | "synthetic";
+            /** Catalogue Namespace */
+            catalogue_namespace?: string | null;
             /**
              * Target Magnitude
              * @default 4

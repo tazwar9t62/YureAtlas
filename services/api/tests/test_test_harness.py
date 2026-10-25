@@ -141,6 +141,42 @@ def test_success_uses_owned_resources_and_preserves_research_artifacts(owned_run
         assert timeout > 0
 
 
+def test_migration_mode_uses_the_same_owned_lifecycle_without_preupgrading_head(owned_run):
+    harness.run_tests(DATABASE_URL, migration_check=True)
+
+    assert len(owned_run.children) == 1
+    args, env, timeout = owned_run.children[0]
+    assert args == [sys.executable, "-m", "scripts.check_migrations"]
+    assert env["YUREATLAS_TEST_DATABASE"] == TEST_NAME
+    assert env["YUREATLAS_TEST_TOKEN"] == TEST_TOKEN
+    assert env["ARTIFACT_DIR"] == str(owned_run.artifact)
+    assert timeout == 300
+    assert dropped_databases(owned_run) == [f'DROP DATABASE "{TEST_NAME}" WITH (FORCE)']
+    assert not owned_run.artifact.exists()
+
+
+def test_migration_checker_failure_survives_failed_drop_and_cleans_artifacts(owned_run, capsys):
+    error = subprocess.CalledProcessError(11, [sys.executable, "-m", "scripts.check_migrations"])
+    owned_run.errors.update(
+        {"scripts.check_migrations": error, "drop": RuntimeError("database disconnected")}
+    )
+    with pytest.raises(subprocess.CalledProcessError) as raised:
+        harness.run_tests(DATABASE_URL, migration_check=True)
+    assert raised.value is error
+    assert not owned_run.artifact.exists()
+    assert "postgres" in owned_run.disposed
+    assert f"Database {TEST_NAME} may remain" in capsys.readouterr().err
+
+
+def test_migration_mode_checks_database_ownership_before_starting_checker(owned_run):
+    owned_run.actual_owner = "foreign"
+    with pytest.raises(ValueError, match="Actual integration database"):
+        harness.run_tests(DATABASE_URL, migration_check=True)
+    assert owned_run.children == []
+    assert len(dropped_databases(owned_run)) == 1
+    assert not owned_run.artifact.exists()
+
+
 def test_drop_failure_preserves_child_error_and_still_removes_artifacts(owned_run, capsys):
     error = subprocess.CalledProcessError(9, [sys.executable, "-m", "pytest"])
     owned_run.errors.update(pytest=error, drop=RuntimeError("database disconnected"))
@@ -346,6 +382,43 @@ print('import completed')
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "import completed"
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_migration_checker_import_is_safe_and_direct_unsafe_execution_refuses_writes(tmp_path):
+    source = """
+import runpy
+import subprocess
+import sys
+from pathlib import Path
+import sqlalchemy
+def forbidden(*args, **kwargs):
+    raise AssertionError('RESOURCE_MUTATION_ATTEMPTED')
+sqlalchemy.create_engine = forbidden
+subprocess.run = forbidden
+Path.write_bytes = forbidden
+runpy.run_module('scripts.check_migrations', run_name='import_safety_probe')
+print('import completed', flush=True)
+runpy.run_module('scripts.check_migrations', run_name='__main__')
+"""
+    env = dict(
+        os.environ, PYTHONPATH=str(harness.ROOT), PYTHONDONTWRITEBYTECODE="1", DATABASE_URL=DATABASE_URL
+    )
+    for key in ("YUREATLAS_TEST_DATABASE", "YUREATLAS_TEST_TOKEN", "ARTIFACT_DIR"):
+        env.pop(key, None)
+    result = subprocess.run(
+        [sys.executable, "-c", source],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert result.stdout.strip() == "import completed"
+    assert "Integration tests must be launched through scripts/test_backend.py" in result.stderr
+    assert "RESOURCE_MUTATION_ATTEMPTED" not in result.stderr
     assert list(tmp_path.iterdir()) == []
 
 

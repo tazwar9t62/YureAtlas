@@ -8,6 +8,9 @@ class ExperimentSpec(BaseModel):
     model_config = ConfigDict(extra="forbid")
     name: str = Field(min_length=3, max_length=80, pattern=r"^[a-z0-9_-]+$")
     provider: Literal["usgs", "jma", "synthetic"] = "usgs"
+    catalogue_namespace: str | None = Field(
+        default=None, min_length=3, max_length=80, pattern=r"^[a-z0-9][a-z0-9_-]{2,79}$"
+    )
     target_magnitude: float = Field(default=4, ge=0, le=9)
     input_magnitude: float = Field(default=3, ge=0, le=9)
     west: float = Field(default=122, ge=115, le=160)
@@ -25,6 +28,8 @@ class ExperimentSpec(BaseModel):
 
     @model_validator(mode="after")
     def coherent(self):
+        if self.catalogue_namespace is not None and self.provider != "jma":
+            raise ValueError("Catalogue namespaces are only supported for JMA local collections")
         if self.west >= self.east or self.south >= self.north:
             raise ValueError("Invalid study envelope")
         if self.input_magnitude > self.target_magnitude or self.yellow >= self.red:

@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -79,6 +80,31 @@ class Ingestion(Identity, Base):
     report: Mapped[dict] = mapped_column(JSONB, default=dict)
 
 
+class ImportManifest(Identity, Base):
+    __tablename__ = "import_manifests"
+    __table_args__ = (
+        UniqueConstraint("source_id", "request_digest"),
+        CheckConstraint('"end" > start'),
+        CheckConstraint("line_count >= 0"),
+        CheckConstraint("format IN ('jma', 'csv')"),
+        Index("ix_import_manifests_source_namespace", "source_id", "namespace"),
+        Index("ix_import_manifests_source_hash", "source_id", "raw_hash"),
+    )
+    source_id: Mapped[str] = mapped_column(ForeignKey("catalogue_sources.id"))
+    ingestion_id: Mapped[str] = mapped_column(ForeignKey("ingestion_runs.id"), unique=True)
+    namespace: Mapped[str] = mapped_column(String)
+    format: Mapped[str] = mapped_column(String)
+    artifact: Mapped[str] = mapped_column(String)
+    raw_hash: Mapped[str] = mapped_column(String(64))
+    line_count: Mapped[int] = mapped_column(Integer)
+    mapping: Mapped[dict] = mapped_column(JSONB)
+    parser_version: Mapped[str] = mapped_column(String)
+    coverage_declared: Mapped[bool] = mapped_column(Boolean)
+    start: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    end: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    request_digest: Mapped[str] = mapped_column(String(64))
+
+
 class Event(Identity, Base):
     __tablename__ = "earthquake_events"
     __table_args__ = (UniqueConstraint("source_id", "provider_id"),)
@@ -99,6 +125,9 @@ class Revision(Identity, Base):
     magnitude: Mapped[float] = mapped_column(Float)
     magnitude_type: Mapped[str] = mapped_column(String)
     status: Mapped[str] = mapped_column(String)
+    event_type: Mapped[str] = mapped_column(String, default="earthquake", server_default="earthquake")
+    selection_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    hash_parent_id: Mapped[str | None] = mapped_column(ForeignKey("earthquake_revisions.id"), nullable=True)
     content_hash: Mapped[str] = mapped_column(String(64))
     raw_ref: Mapped[str] = mapped_column(String)
     location: Mapped[str] = mapped_column(Geometry("POINT", srid=4326))

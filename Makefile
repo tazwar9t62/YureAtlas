@@ -31,7 +31,7 @@ worker:
 web:
 	$(PNPM) --dir apps/web dev
 
-.PHONY: check-python check-web-tools lint test-unit test-integration typecheck build contract-check verify
+.PHONY: check-python check-web-tools lint test-unit test-integration test-migrations typecheck build contract-check verify
 check-python:
 	@$(PYTHON) -c 'import sys; assert sys.version_info[:2] == (3, 12), "Use Python 3.12 (see .python-version)"'
 check-web-tools:
@@ -43,6 +43,8 @@ test-unit: check-python
 	YUREATLAS_INTEGRATION=0 OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 $(PYTHON) -m pytest -q -m 'not integration'
 test-integration: check-python
 	$(PYTHON) scripts/test_backend.py
+test-migrations: check-python
+	$(PYTHON) scripts/test_backend.py --migration-check
 test: test-unit test-integration
 typecheck: check-web-tools
 	$(PNPM) --dir apps/web typecheck
@@ -51,7 +53,7 @@ build: check-web-tools
 contract-check: check-python check-web-tools
 	$(PYTHON) scripts/export_openapi.py --check
 	$(PNPM) --dir apps/web contract:check
-verify: lint test typecheck contract-check build
+verify: lint test test-migrations typecheck contract-check build
 contract: check-python check-web-tools
 	$(PYTHON) scripts/export_openapi.py
 	$(PNPM) --dir apps/web generate

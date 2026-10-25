@@ -1,3 +1,4 @@
+from contextlib import closing
 from datetime import date
 from pathlib import Path
 
@@ -49,14 +50,23 @@ def test_csv_validation_retains_null_depth():
     assert report["rejected_count"] == 1
 
 
-def test_usgs_rejects_missing_magnitude_and_explosions():
+def test_usgs_rejects_missing_magnitude_but_retains_reclassification_evidence():
     good = {
         "id": "a",
-        "geometry": {"coordinates": [140, 35, None]},
-        "properties": {"type": "earthquake", "time": 1700000000000, "mag": 4.2, "magType": "mb"},
+        "geometry": {"type": "Point", "coordinates": [140, 35, None]},
+        "properties": {
+            "type": "earthquake",
+            "time": 1700000000000,
+            "updated": 1700000000000,
+            "status": "reviewed",
+            "mag": 4.2,
+            "magType": "mb",
+        },
     }
     missing = dict(good, id="b", properties=dict(good["properties"], mag=None))
     explosion = dict(good, id="c", properties=dict(good["properties"], type="explosion"))
-    records, rejected = USGS().parse({"features": [good, missing, explosion]})
-    assert len(records) == 1 and len(rejected) == 2
+    with closing(USGS()) as provider:
+        records, rejected = provider.parse({"features": [good, missing, explosion]})
+    assert len(records) == 2 and len(rejected) == 1
     assert records[0]["magnitude_type"] == "mb"
+    assert records[1]["event_type"] == "explosion"

@@ -1,5 +1,6 @@
 """Run integration checks using resources owned by this invocation only."""
 
+import argparse
 import os
 import re
 import shutil
@@ -90,7 +91,7 @@ def run_child(args, env, timeout):
         process.wait()
 
 
-def run_tests(database_url):
+def run_tests(database_url, *, migration_check=False):
     url = checked_url(database_url)
     name = "yureatlas_test_" + uuid4().hex
     token = uuid4().hex
@@ -135,8 +136,11 @@ def run_tests(database_url):
         )
         print(f"Disposable artifacts: {artifact}", flush=True)
         validate_isolation(env)  # Verify the effective connection before Alembic can write.
-        run_child([sys.executable, "-m", "alembic", "upgrade", "head"], env, timeout=120)
-        run_child([sys.executable, "-m", "pytest", "-q", "-m", "integration"], env, timeout=900)
+        if migration_check:
+            run_child([sys.executable, "-m", "scripts.check_migrations"], env, timeout=300)
+        else:
+            run_child([sys.executable, "-m", "alembic", "upgrade", "head"], env, timeout=120)
+            run_child([sys.executable, "-m", "pytest", "-q", "-m", "integration"], env, timeout=900)
     finally:
         primary_failure = sys.exc_info()[0] is not None
         failures = []
@@ -182,13 +186,16 @@ def run_tests(database_url):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--migration-check", action="store_true", help="Check a populated schema002 upgrade")
+    args = parser.parse_args()
     from yureatlas.config import Settings
 
     def terminate(signum, _frame):
         raise SystemExit(128 + signum)
 
     signal.signal(signal.SIGTERM, terminate)
-    run_tests(Settings(_env_file=ROOT / ".env").database_url)
+    run_tests(Settings(_env_file=ROOT / ".env").database_url, migration_check=args.migration_check)
 
 
 if __name__ == "__main__":
