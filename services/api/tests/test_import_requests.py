@@ -46,6 +46,8 @@ def requests(monkeypatch):
         return SimpleNamespace(
             id=key,
             kind=kind,
+            payload=payload,
+            execution=None,
             status="queued",
             progress=0,
             attempts=0,

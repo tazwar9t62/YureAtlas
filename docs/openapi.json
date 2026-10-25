@@ -1819,6 +1819,161 @@
         ],
         "title": "ExperimentView"
       },
+      "ForecastSelection": {
+        "properties": {
+          "policy": {
+            "type": "string",
+            "const": "forecast-selection-v1",
+            "title": "Policy"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "requested",
+              "promotion",
+              "historical_rate"
+            ],
+            "title": "Kind"
+          },
+          "selected_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Selected At"
+          },
+          "promotion_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promotion Id"
+          },
+          "promotion_created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promotion Created At"
+          },
+          "promotion_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promotion Reason"
+          },
+          "model_artifact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Artifact"
+          },
+          "model_training_cutoff": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Model Training Cutoff"
+          },
+          "model_available_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Model Available At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "policy",
+          "kind",
+          "selected_at",
+          "promotion_id",
+          "promotion_created_at",
+          "promotion_reason",
+          "model_artifact",
+          "model_training_cutoff",
+          "model_available_at"
+        ],
+        "title": "ForecastSelection"
+      },
+      "ForecastTarget": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version"
+          },
+          "state": {
+            "type": "string",
+            "const": "target_pinned",
+            "title": "State"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "input_cutoff": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Input Cutoff"
+          },
+          "mode": {
+            "type": "string",
+            "const": "prospective",
+            "title": "Mode"
+          },
+          "target_basis": {
+            "type": "string",
+            "enum": [
+              "explicit_start",
+              "request_time",
+              "legacy_explicit_start",
+              "legacy_request_time",
+              "inline_request_time"
+            ],
+            "title": "Target Basis"
+          },
+          "request_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Request Time"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "state",
+          "start",
+          "end",
+          "input_cutoff",
+          "mode",
+          "target_basis",
+          "request_time"
+        ],
+        "title": "ForecastTarget"
+      },
       "ForecastView": {
         "properties": {
           "id": {
@@ -2053,6 +2208,36 @@
           "cancel_requested": {
             "type": "boolean",
             "title": "Cancel Requested"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ForecastTarget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ResolvedForecastExecution"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "state",
+                  "mapping": {
+                    "resolved": "#/components/schemas/ResolvedForecastExecution",
+                    "target_pinned": "#/components/schemas/ForecastTarget"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution"
           }
         },
         "type": "object",
@@ -3369,6 +3554,91 @@
           "inclusion"
         ],
         "title": "ReportPolicies"
+      },
+      "ResolvedForecastExecution": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version"
+          },
+          "state": {
+            "type": "string",
+            "const": "resolved",
+            "title": "State"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "input_cutoff": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Input Cutoff"
+          },
+          "mode": {
+            "type": "string",
+            "const": "prospective",
+            "title": "Mode"
+          },
+          "target_basis": {
+            "type": "string",
+            "enum": [
+              "explicit_start",
+              "request_time",
+              "legacy_explicit_start",
+              "legacy_request_time",
+              "inline_request_time"
+            ],
+            "title": "Target Basis"
+          },
+          "request_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Request Time"
+          },
+          "experiment_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Experiment Id"
+          },
+          "model_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Model Id"
+          },
+          "forecast_key": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Forecast Key"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/ForecastSelection"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "state",
+          "start",
+          "end",
+          "input_cutoff",
+          "mode",
+          "target_basis",
+          "request_time",
+          "experiment_id",
+          "model_id",
+          "forecast_key",
+          "selection"
+        ],
+        "title": "ResolvedForecastExecution"
       },
       "ValidationError": {
         "properties": {

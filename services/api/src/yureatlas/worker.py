@@ -4,6 +4,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 from .execution import JobOwnershipLost, LostOwnership, WorkerOwnershipLost, execution_scope
+from .forecast_errors import LegacyRetryIdentityUnknown, PublicationDeadlineMissed
 from .jobs import Cancelled, checkpoint, claim, finish
 from .worker_locks import worker_session
 
@@ -65,12 +66,13 @@ def run_once(owner) -> bool:
             log.warning("Job %s attempt lost ownership; later claims may recover it", job.id)
         except Cancelled as exc:
             complete("cancelled", error=str(exc))
+        except PublicationDeadlineMissed as exc:
+            complete("missed", result=exc.result, error=str(exc))
+        except LegacyRetryIdentityUnknown as exc:
+            complete("failed", result=exc.result, error=str(exc))
         except Exception as exc:
             log.exception("Job %s failed", job.id)
-            missed = (
-                job.kind == "forecast" and job.payload.get("scheduled") and "deadline" in str(exc).lower()
-            )
-            complete("missed" if missed else "failed", error=str(exc)[:4000])
+            complete("failed", error=str(exc)[:4000])
         finally:
             stop.set()
     return True

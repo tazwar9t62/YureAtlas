@@ -672,6 +672,85 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** ForecastSelection */
+        ForecastSelection: {
+            /**
+             * Policy
+             * @constant
+             */
+            policy: "forecast-selection-v1";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "requested" | "promotion" | "historical_rate";
+            /**
+             * Selected At
+             * Format: date-time
+             */
+            selected_at: string;
+            /** Promotion Id */
+            promotion_id: string | null;
+            /** Promotion Created At */
+            promotion_created_at: string | null;
+            /** Promotion Reason */
+            promotion_reason: string | null;
+            /** Model Artifact */
+            model_artifact: string | null;
+            /**
+             * Model Training Cutoff
+             * Format: date-time
+             */
+            model_training_cutoff: string;
+            /**
+             * Model Available At
+             * Format: date-time
+             */
+            model_available_at: string;
+        };
+        /** ForecastTarget */
+        ForecastTarget: {
+            /**
+             * Version
+             * @constant
+             */
+            version: 1;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "target_pinned";
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Input Cutoff
+             * Format: date-time
+             */
+            input_cutoff: string;
+            /**
+             * Mode
+             * @constant
+             */
+            mode: "prospective";
+            /**
+             * Target Basis
+             * @enum {string}
+             */
+            target_basis: "explicit_start" | "request_time" | "legacy_explicit_start" | "legacy_request_time" | "inline_request_time";
+            /**
+             * Request Time
+             * Format: date-time
+             */
+            request_time: string;
+        };
         /** ForecastView */
         ForecastView: {
             /** Id */
@@ -790,6 +869,12 @@ export interface components {
             created_at: string;
             /** Cancel Requested */
             cancel_requested: boolean;
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            };
+            /** Execution */
+            execution?: (components["schemas"]["ForecastTarget"] | components["schemas"]["ResolvedForecastExecution"]) | null;
         };
         JsonValue: unknown;
         /** MetricReport */
@@ -1227,6 +1312,56 @@ export interface components {
             evaluation: string;
             /** Inclusion */
             inclusion: string;
+        };
+        /** ResolvedForecastExecution */
+        ResolvedForecastExecution: {
+            /**
+             * Version
+             * @constant
+             */
+            version: 1;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "resolved";
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Input Cutoff
+             * Format: date-time
+             */
+            input_cutoff: string;
+            /**
+             * Mode
+             * @constant
+             */
+            mode: "prospective";
+            /**
+             * Target Basis
+             * @enum {string}
+             */
+            target_basis: "explicit_start" | "request_time" | "legacy_explicit_start" | "legacy_request_time" | "inline_request_time";
+            /**
+             * Request Time
+             * Format: date-time
+             */
+            request_time: string;
+            /** Experiment Id */
+            experiment_id: string;
+            /** Model Id */
+            model_id: string;
+            /** Forecast Key */
+            forecast_key: string;
+            selection: components["schemas"]["ForecastSelection"];
         };
         /** ValidationError */
         ValidationError: {

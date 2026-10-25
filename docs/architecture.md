@@ -19,7 +19,7 @@ The worker's singleton connection is idle in autocommit mode during computation 
 
 ## Data flow
 
-1. A validated request enqueues a unique job. The API never performs training or simulation in an in-process background task.
+1. A validated request enqueues a unique job. Forecast jobs preserve the original payload, pin their target at request time and resolve model-selection provenance once before publication. Retries use that saved identity. The API never performs training or simulation in an in-process background task.
 2. Worker retrieval stores raw source artifacts, normalized append-only revisions, rejection reports, and explicit coverage intervals. Receipt time differs from origin/provider update time.
 3. Fitting creates an exact revision snapshot, temporal feature batches and manifest, then model versions with diagnostics and availability.
 4. Prediction checks experiment compatibility, cutoffs, model availability, source freshness and complete output. Atomic publication records issue time, 24-hour window, frozen probabilities/colours, code version and dependency manifest.

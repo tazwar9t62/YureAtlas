@@ -224,7 +224,14 @@ class Job(Identity, Base):
     result: Mapped[dict] = mapped_column(JSONB, default=dict)
     attempt_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
     worker_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
-    __table_args__ = (CheckConstraint("(attempt_token IS NULL) = (worker_token IS NULL)"),)
+    execution: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    __table_args__ = (
+        CheckConstraint("(attempt_token IS NULL) = (worker_token IS NULL)"),
+        CheckConstraint(
+            "execution IS NULL OR (kind = 'forecast' AND jsonb_typeof(execution) = 'object' "
+            "AND execution->>'state' IS NOT NULL AND execution->>'state' IN ('target_pinned', 'resolved'))"
+        ),
+    )
 
 
 class Promotion(Identity, Base):

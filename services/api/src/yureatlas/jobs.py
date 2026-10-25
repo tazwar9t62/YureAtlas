@@ -37,6 +37,18 @@ def enqueue_missed(kind: str, payload: dict, key: str, reason: str, *, session=N
 
 def _job_values(kind: str, payload: dict, key: str, *, missed_reason: str | None = None):
     timestamp = now()
+    execution = None
+    result = {}
+    if kind == "forecast":
+        from .forecast_execution import pin_forecast_target
+
+        execution = pin_forecast_target(payload, timestamp)
+        if missed_reason is not None:
+            from .forecast_errors import PublicationDeadlineMissed
+
+            result = PublicationDeadlineMissed(
+                execution["start"], "schedule_reconciliation", timestamp
+            ).result
     return {
         "id": uid(),
         "created_at": timestamp,
@@ -47,7 +59,8 @@ def _job_values(kind: str, payload: dict, key: str, *, missed_reason: str | None
         "attempts": 0,
         "progress": 0,
         "cancel_requested": False,
-        "result": {},
+        "result": result,
+        "execution": execution,
         "error": missed_reason,
         "heartbeat": timestamp if missed_reason is not None else None,
         "lease_until": None,

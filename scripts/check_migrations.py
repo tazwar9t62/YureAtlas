@@ -52,6 +52,7 @@ JSON_COLUMNS = {
     "metrics",
     "payload",
     "result",
+    "execution",
 }
 CONFIG_002 = {
     "name": "migration_legacy",
@@ -498,10 +499,15 @@ def main():
             f"Seeded schema002: {sum(map(len, original.values()))} rows and {len(artifacts)} artifacts",
             flush=True,
         )
-        for target in ("003", "004", "005", "006", "007", "head"):
+        for target in ("003", "004", "005", "006", "007", "008", "head"):
             upgrade(target, env)
             assert_preserved(engine, original, artifacts, artifact_dir)
             check_defaults(engine)
+            if target in {"008", "head"}:
+                with engine.connect() as connection:
+                    assert connection.execute(
+                        text("SELECT attempt_token, worker_token, execution FROM jobs WHERE id='legacy-job'")
+                    ).one() == (None, None, None)
             validate_isolation(env)
             check_guards(engine, receipts=target != "003")
             print(

@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from .forecast_execution_schema import ForecastExecution
 from .timeutil import utc
 
 ForecastMode = Literal["prospective", "retrospective_revised", "synthetic_demo"]
@@ -86,6 +87,8 @@ class JobView(BaseModel):
     result: dict
     created_at: datetime
     cancel_requested: bool
+    payload: dict = Field(default_factory=dict)
+    execution: ForecastExecution | None = None
 
 
 class ForecastView(BaseModel):

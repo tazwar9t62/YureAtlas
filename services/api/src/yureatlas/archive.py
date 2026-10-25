@@ -146,12 +146,14 @@ def train_rate(experiment_id, cutoff, history_start=None):
 
 
 def _validate_publication_time(model, start, cutoff, issue, mode, stage):
+    if mode == "prospective" and issue >= start:
+        from .forecast_errors import PublicationDeadlineMissed
+
+        raise PublicationDeadlineMissed(start, stage, issue)
     if cutoff > start or model.training_cutoff > cutoff:
         raise ValueError("Training and feature cutoffs must precede the prediction window")
     if mode != "prospective":
         return
-    if issue >= start:
-        raise ValueError(f"Missed publication deadline {stage}; nothing published")
     if issue < cutoff:
         raise ValueError("Future input cutoff; choose a genuinely future window")
     if model.available_at > issue:
@@ -182,6 +184,9 @@ def issue_forecast(
 ):
     start = utc(start)
     cutoff = utc(cutoff) if cutoff is not None else start - timedelta(minutes=30)
+    from .forecast_execution import authorize_forecast
+
+    authorize_forecast(experiment_id, model_id, start, cutoff, mode)
     experiment, grid = load_experiment(experiment_id)
     if mode not in {"prospective", "retrospective_revised", "synthetic_demo"}:
         raise ValueError(
@@ -305,9 +310,9 @@ def issue_forecast(
             and getattr(getattr(error.orig, "diag", None), "constraint_name", None)
             == "prospective_publication_deadline"
         ):
-            raise ValueError(
-                "Missed publication deadline during transaction finalization; nothing published"
-            ) from error
+            from .forecast_errors import PublicationDeadlineMissed
+
+            raise PublicationDeadlineMissed(start, "during transaction finalization", now()) from error
         raise
 
 

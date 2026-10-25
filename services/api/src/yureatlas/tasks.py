@@ -8,7 +8,7 @@ from .db import transaction
 from .demo import DEMO_TEST_START, seed_catalogue
 from .ingestion import ingest_usgs, real_experiment
 from .learning import train_suite
-from .tables import Forecast, Model, Promotion, now
+from .tables import Forecast, now
 from .timeutil import utc
 from .training_inputs import validate_backtest_inputs, validate_training_inputs
 
@@ -70,6 +70,10 @@ def run_backtest(
 
 
 def execute(kind, payload, progress):
+    if kind == "forecast":
+        from .forecast_execution import run_forecast
+
+        return run_forecast(payload, progress)
     if kind == "demo":
         experiment = seed_catalogue(lambda p: progress(p * 0.3))
         return run_backtest(
@@ -246,36 +250,6 @@ def execute(kind, payload, progress):
             "experiment_id": experiment_id,
             "models": [{"id": m.id, "algorithm": m.algorithm, "status": m.status} for m in models],
         }
-    if kind == "forecast":
-        start = utc(payload["start"]) if payload.get("start") else now() + timedelta(minutes=30)
-        cutoff = start - timedelta(minutes=30)
-        model_id = payload.get("model_id")
-        with transaction() as s:
-            if not model_id:
-                promotion = s.scalar(
-                    select(Promotion)
-                    .where(Promotion.experiment_id == experiment_id)
-                    .order_by(Promotion.created_at.desc())
-                    .limit(1)
-                )
-                model_id = (
-                    promotion.model_id
-                    if promotion
-                    else s.scalar(
-                        select(Model.id)
-                        .where(
-                            Model.experiment_id == experiment_id,
-                            Model.status == "available",
-                            Model.algorithm == "historical_rate",
-                        )
-                        .order_by(Model.created_at.desc())
-                        .limit(1)
-                    )
-                )
-        if not model_id:
-            raise ValueError("No eligible model. Import sufficient history and train first")
-        prediction = issue_forecast(experiment_id, model_id, start, cutoff=cutoff, progress=progress)
-        return {"forecast_id": prediction.id}
     if kind == "evaluate":
         with transaction() as s:
             ids = list(
