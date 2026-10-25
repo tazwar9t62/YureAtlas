@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { emptyReport } from "./fixtures/reports";
 
 test.skip(
   process.env.YUREATLAS_MOCK_UI !== "1" || !process.env.WEB_URL,
@@ -25,7 +26,8 @@ async function importScreen(page: Page, catalogueNamespace?: string) {
   const imports: Record<string, string>[] = [];
   await page.route("**/api/**", async (route) => {
     const request = route.request();
-    const path = new URL(request.url()).pathname;
+    const url = new URL(request.url());
+    const path = url.pathname;
     let result: unknown = [];
     if (path === "/api/experiments") {
       if (request.method() === "POST") {
@@ -56,7 +58,12 @@ async function importScreen(page: Page, catalogueNamespace?: string) {
     } else if (path === "/api/sources") {
       result = { sources: [], worker: null, schedule_enabled: false };
     } else if (path === "/api/metrics") {
-      result = { series: [], comparisons: [] };
+      result = emptyReport({
+        experimentId: experiment.id,
+        mode: url.searchParams.get("mode") as ReturnType<
+          typeof emptyReport
+        >["mode"],
+      });
     }
     await route.fulfill({ json: result });
   });

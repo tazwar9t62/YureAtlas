@@ -1,6 +1,6 @@
 import numpy as np
 import pytest
-from yureatlas.metrics import aggregate, brier_skill, paired_block_interval, score
+from yureatlas.metrics import aggregate, brier_skill, score
 
 
 def test_exact_scores_and_undefined_metrics():
@@ -33,5 +33,3 @@ def test_aggregate_uses_denominators_not_daily_percentages():
     combined = aggregate([first, second])
     assert combined["recall"] == 0.1
     assert combined["n"] == 10
-    assert paired_block_interval([0.1] * 10)["status"] == "insufficient_data"
-    assert paired_block_interval([0.1] * 28)["interval95"] == pytest.approx([0.1, 0.1])

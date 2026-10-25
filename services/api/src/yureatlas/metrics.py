@@ -1,11 +1,17 @@
 """Scores for binary cell-window occurrence, with explicit denominators."""
 
+from datetime import timedelta
 from itertools import pairwise
+from math import isfinite
 
 import numpy as np
 from sklearn.metrics import average_precision_score
 
+from .timeutil import utc
+
 EPSILON = 1e-12
+COUNT_FIELDS = ("n", "missing", "positives", "tp", "fp", "tn", "fn")
+SUM_FIELDS = ("brier_sum", "log_loss_sum", "red_area", "eligible_area")
 
 
 def score(probability, observed, areas=None, threshold=0.05, missing=0):
@@ -64,23 +70,36 @@ def score(probability, observed, areas=None, threshold=0.05, missing=0):
     }
 
 
+def valid_totals(metrics):
+    """Whether stored totals can safely contribute to pooled scores.
+
+    Derived daily percentages are deliberately ignored: pooled results are
+    defined by these counts and sums, including valid zero-observation rows.
+    """
+    if not isinstance(metrics, dict):
+        return False
+    if any(type(metrics.get(key)) is not int or metrics[key] < 0 for key in COUNT_FIELDS):
+        return False
+    if any(
+        type(metrics.get(key)) not in (int, float) or not isfinite(metrics[key]) or metrics[key] < 0
+        for key in SUM_FIELDS
+    ):
+        return False
+    n = metrics["n"]
+    return (
+        metrics["tp"] + metrics["fp"] + metrics["tn"] + metrics["fn"] == n
+        and metrics["positives"] == metrics["tp"] + metrics["fn"]
+        and metrics["brier_sum"] <= n
+        and metrics["red_area"] <= metrics["eligible_area"]
+        and (n > 0 or all(metrics[key] == 0 for key in SUM_FIELDS))
+    )
+
+
 def aggregate(metrics):
-    result = {
-        key: sum(m[key] for m in metrics)
-        for key in (
-            "n",
-            "missing",
-            "positives",
-            "tp",
-            "fp",
-            "tn",
-            "fn",
-            "brier_sum",
-            "log_loss_sum",
-            "red_area",
-            "eligible_area",
-        )
-    }
+    metrics = list(metrics)
+    if not all(valid_totals(row) for row in metrics):
+        raise ValueError("Pooled metrics require valid finite sums and nonnegative integer counts")
+    result = {key: sum(m[key] for m in metrics) for key in (*COUNT_FIELDS, *SUM_FIELDS)}
     n, tp, fp, fn, tn = (result[k] for k in ("n", "tp", "fp", "fn", "tn"))
     result.update(
         brier=result["brier_sum"] / n if n else None,
@@ -99,23 +118,73 @@ def brier_skill(candidate, baseline):
     )
 
 
-def paired_block_interval(daily_differences, block_days=7, simulations=1000, seed=2026):
-    values = np.asarray(daily_differences, dtype=float)
-    if len(values) < 4 * block_days:
-        return {"status": "insufficient_data", "days": len(values), "minimum_days": 4 * block_days}
-    rng = np.random.default_rng(seed)
-    means = []
-    for _ in range(simulations):
-        starts = rng.integers(0, len(values) - block_days + 1, size=int(np.ceil(len(values) / block_days)))
-        sample = np.concatenate([values[s : s + block_days] for s in starts])[: len(values)]
-        means.append(sample.mean())
-    return {
-        "status": "available",
-        "mean_difference": float(values.mean()),
-        "interval95": np.quantile(means, [0.025, 0.975]).tolist(),
-        "days": len(values),
+def paired_score_interval(pairs, block_days=7, simulations=1000, seed=2026):
+    """Resample consecutive-day blocks of paired Brier loss sums and denominators.
+
+    Each pair contains start/end, candidate_sum/reference_sum, and
+    candidate_n/reference_n. A shared positive denominator is required within
+    each window; it may vary between windows. Missing observations never enter
+    the loss denominator. This remains an experimental uncertainty estimate.
+    """
+    if any(type(value) is not int or value <= 0 for value in (block_days, simulations)):
+        raise ValueError("Block length and simulation count must be positive integers")
+    if type(seed) is not int or seed < 0:
+        raise ValueError("Seed must be a nonnegative integer")
+    pairs = list(pairs)
+    result = {
+        "status": "insufficient_data",
+        "reason": None,
+        "days": len(pairs),
+        "minimum_days": 4 * block_days,
         "block_days": block_days,
         "simulations": simulations,
         "seed": seed,
-        "policy": "paired moving consecutive-day blocks; experimental uncertainty estimate",
+        "paired_cell_windows": 0,
+        "mean_difference": None,
+        "interval95": None,
+        "method_version": "paired-weighted-moving-blocks-v1",
+        "estimand": "pooled candidate Brier minus pooled reference Brier",
+        "policy": "paired moving consecutive-day blocks; ratio of resampled candidate-minus-reference loss sums to paired eligible cell-window counts; experimental uncertainty estimate",
+    }
+    windows = []
+    for pair in pairs:
+        counts = [pair.get("candidate_n"), pair.get("reference_n")]
+        sums = [pair.get("candidate_sum"), pair.get("reference_sum")]
+        if (
+            any(type(n) is not int or n <= 0 for n in counts)
+            or counts[0] != counts[1]
+            or any(
+                type(value) not in (int, float) or not isfinite(value) or value < 0 or value > counts[0]
+                for value in sums
+            )
+        ):
+            return {**result, "reason": "invalid_scores"}
+        try:
+            start, end = utc(pair["start"]), utc(pair["end"])
+        except (KeyError, TypeError, ValueError, AttributeError):
+            return {**result, "reason": "invalid_windows"}
+        windows.append((start, end, sums[0] - sums[1], counts[0]))
+    windows.sort(key=lambda window: (window[0], window[1]))
+    result["paired_cell_windows"] = sum(window[3] for window in windows)
+    if any(end - start != timedelta(days=1) for start, end, _, _ in windows):
+        return {**result, "reason": "non_24h_windows"}
+    if len({start for start, _, _, _ in windows}) != len(windows):
+        return {**result, "reason": "duplicate_windows"}
+    if any(first[1] != second[0] for first, second in pairwise(windows)):
+        return {**result, "reason": "nonconsecutive_windows"}
+    if len(windows) < 4 * block_days:
+        return {**result, "reason": "insufficient_days"}
+    differences = np.asarray([window[2] for window in windows], dtype=float)
+    counts = np.asarray([window[3] for window in windows], dtype=float)
+    rng = np.random.default_rng(seed)
+    means = []
+    for _ in range(simulations):
+        starts = rng.integers(0, len(windows) - block_days + 1, size=int(np.ceil(len(windows) / block_days)))
+        indices = np.concatenate([np.arange(start, start + block_days) for start in starts])[: len(windows)]
+        means.append(differences[indices].sum() / counts[indices].sum())
+    return {
+        **result,
+        "status": "available",
+        "mean_difference": float(differences.sum() / counts.sum()),
+        "interval95": np.quantile(means, [0.025, 0.975]).tolist(),
     }

@@ -1002,6 +1002,11 @@
             "in": "query",
             "required": true,
             "schema": {
+              "enum": [
+                "prospective",
+                "retrospective_revised",
+                "synthetic_demo"
+              ],
               "type": "string",
               "title": "Mode"
             }
@@ -1011,11 +1016,51 @@
             "in": "query",
             "required": false,
             "schema": {
-              "type": "integer",
-              "maximum": 3650,
-              "minimum": 0,
-              "default": 30,
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 3650,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
               "title": "Days"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
             }
           }
         ],
@@ -1025,9 +1070,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Metrics Metrics Get"
+                  "$ref": "#/components/schemas/MetricReport"
                 }
               }
             }
@@ -1139,8 +1182,82 @@
             "in": "query",
             "required": true,
             "schema": {
+              "enum": [
+                "prospective",
+                "retrospective_revised",
+                "synthetic_demo"
+              ],
               "type": "string",
               "title": "Mode"
+            }
+          },
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 3650,
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Days"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          },
+          {
+            "name": "end",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End"
+            }
+          },
+          {
+            "name": "expected_report_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Report Id"
             }
           }
         ],
@@ -1149,7 +1266,9 @@
             "description": "Successful Response",
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MetricReport"
+                }
               }
             }
           },
@@ -1227,6 +1346,257 @@
           "file"
         ],
         "title": "Body_import_file_imports_post"
+      },
+      "CalibrationBin": {
+        "properties": {
+          "lower": {
+            "type": "number",
+            "title": "Lower"
+          },
+          "upper": {
+            "type": "number",
+            "title": "Upper"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "predicted": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted"
+          },
+          "observed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "lower",
+          "upper",
+          "count",
+          "predicted",
+          "observed"
+        ],
+        "title": "CalibrationBin"
+      },
+      "EvaluatedScore": {
+        "properties": {
+          "n": {
+            "type": "integer",
+            "title": "N"
+          },
+          "missing": {
+            "type": "integer",
+            "title": "Missing"
+          },
+          "positives": {
+            "type": "integer",
+            "title": "Positives"
+          },
+          "tp": {
+            "type": "integer",
+            "title": "Tp"
+          },
+          "fp": {
+            "type": "integer",
+            "title": "Fp"
+          },
+          "tn": {
+            "type": "integer",
+            "title": "Tn"
+          },
+          "fn": {
+            "type": "integer",
+            "title": "Fn"
+          },
+          "brier_sum": {
+            "type": "number",
+            "title": "Brier Sum"
+          },
+          "log_loss_sum": {
+            "type": "number",
+            "title": "Log Loss Sum"
+          },
+          "red_area": {
+            "type": "number",
+            "title": "Red Area"
+          },
+          "eligible_area": {
+            "type": "number",
+            "title": "Eligible Area"
+          },
+          "brier": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brier"
+          },
+          "log_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Log Loss"
+          },
+          "recall": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall"
+          },
+          "precision": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision"
+          },
+          "false_positive_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "False Positive Rate"
+          },
+          "red_coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Red Coverage"
+          },
+          "average_precision": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Average Precision"
+          },
+          "calibration": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/CalibrationBin"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calibration"
+          },
+          "clipping_epsilon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Clipping Epsilon"
+          },
+          "confident_misses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confident Misses"
+          },
+          "threshold": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Threshold"
+          },
+          "source_policy": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Policy"
+          }
+        },
+        "type": "object",
+        "required": [
+          "n",
+          "missing",
+          "positives",
+          "tp",
+          "fp",
+          "tn",
+          "fn",
+          "brier_sum",
+          "log_loss_sum",
+          "red_area",
+          "eligible_area",
+          "brier",
+          "log_loss",
+          "recall",
+          "precision",
+          "false_positive_rate",
+          "red_coverage"
+        ],
+        "title": "EvaluatedScore"
       },
       "EvaluationView": {
         "properties": {
@@ -1699,6 +2069,566 @@
         ],
         "title": "JobView"
       },
+      "JsonValue": {},
+      "MetricReport": {
+        "properties": {
+          "report_id": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Report Id"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Generated At"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "prospective",
+              "retrospective_revised",
+              "synthetic_demo"
+            ],
+            "title": "Mode"
+          },
+          "days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Days"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/MetricReportScope"
+          },
+          "experiment": {
+            "$ref": "#/components/schemas/ReportExperiment"
+          },
+          "policies": {
+            "$ref": "#/components/schemas/ReportPolicies"
+          },
+          "counts": {
+            "$ref": "#/components/schemas/ReportCounts"
+          },
+          "selected_forecast_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Selected Forecast Ids"
+          },
+          "selected_evaluation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Selected Evaluation Ids"
+          },
+          "policy_version": {
+            "type": "string",
+            "title": "Policy Version"
+          },
+          "score_policy_version": {
+            "type": "string",
+            "title": "Score Policy Version"
+          },
+          "matching_policy": {
+            "type": "string",
+            "title": "Matching Policy"
+          },
+          "aggregation_policy": {
+            "type": "string",
+            "title": "Aggregation Policy"
+          },
+          "series_policy": {
+            "type": "string",
+            "title": "Series Policy"
+          },
+          "series": {
+            "items": {
+              "$ref": "#/components/schemas/MetricSeriesRow"
+            },
+            "type": "array",
+            "title": "Series"
+          },
+          "comparisons": {
+            "items": {
+              "$ref": "#/components/schemas/ModelComparison"
+            },
+            "type": "array",
+            "title": "Comparisons"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/PairDecision"
+            },
+            "type": "array",
+            "title": "Decisions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "report_id",
+          "generated_at",
+          "mode",
+          "days",
+          "scope",
+          "experiment",
+          "policies",
+          "counts",
+          "selected_forecast_ids",
+          "selected_evaluation_ids",
+          "policy_version",
+          "score_policy_version",
+          "matching_policy",
+          "aggregation_policy",
+          "series_policy",
+          "series",
+          "comparisons",
+          "decisions"
+        ],
+        "title": "MetricReport"
+      },
+      "MetricReportScope": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "relative",
+              "explicit",
+              "whole_experiment"
+            ],
+            "title": "Kind"
+          },
+          "requested_days": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Days"
+          },
+          "requested_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested Start"
+          },
+          "requested_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Requested End"
+          },
+          "resolved_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved Start"
+          },
+          "resolved_end": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved End"
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Anchor"
+          },
+          "empty_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "no_completed_evaluated_window",
+                  "no_forecasts",
+                  "no_forecasts_in_range"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Empty Reason"
+          },
+          "display_timezone": {
+            "type": "string",
+            "const": "Asia/Tokyo",
+            "title": "Display Timezone"
+          },
+          "containment_policy": {
+            "type": "string",
+            "title": "Containment Policy"
+          },
+          "limits": {
+            "$ref": "#/components/schemas/ReportLimits"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "requested_days",
+          "requested_start",
+          "requested_end",
+          "resolved_start",
+          "resolved_end",
+          "anchor",
+          "empty_reason",
+          "display_timezone",
+          "containment_policy",
+          "limits"
+        ],
+        "title": "MetricReportScope"
+      },
+      "MetricSeriesRow": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Date"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "forecast_id": {
+            "type": "string",
+            "title": "Forecast Id"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "algorithm": {
+            "type": "string",
+            "title": "Algorithm"
+          },
+          "evaluation_id": {
+            "type": "string",
+            "title": "Evaluation Id"
+          },
+          "evaluation_version": {
+            "type": "integer",
+            "title": "Evaluation Version"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "snapshot": {
+            "type": "string",
+            "title": "Snapshot"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/EvaluatedScore"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "start",
+          "end",
+          "forecast_id",
+          "model_id",
+          "algorithm",
+          "evaluation_id",
+          "evaluation_version",
+          "status",
+          "snapshot",
+          "metrics"
+        ],
+        "title": "MetricSeriesRow"
+      },
+      "ModelComparison": {
+        "properties": {
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "algorithm": {
+            "type": "string",
+            "title": "Algorithm"
+          },
+          "metrics": {
+            "$ref": "#/components/schemas/PooledScore"
+          },
+          "paired_metrics": {
+            "$ref": "#/components/schemas/PooledScore"
+          },
+          "reference_metrics": {
+            "$ref": "#/components/schemas/PooledScore"
+          },
+          "brier_skill": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brier Skill"
+          },
+          "brier_skill_reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "no_pairs",
+                  "reference_brier_zero"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brier Skill Reason"
+          },
+          "paired_days": {
+            "type": "integer",
+            "title": "Paired Days"
+          },
+          "excluded_days": {
+            "type": "integer",
+            "title": "Excluded Days"
+          },
+          "paired_forecasts": {
+            "type": "integer",
+            "title": "Paired Forecasts"
+          },
+          "excluded_forecasts": {
+            "type": "integer",
+            "title": "Excluded Forecasts"
+          },
+          "total_forecasts": {
+            "type": "integer",
+            "title": "Total Forecasts"
+          },
+          "evaluated_forecasts": {
+            "type": "integer",
+            "title": "Evaluated Forecasts"
+          },
+          "scoreable_forecasts": {
+            "type": "integer",
+            "title": "Scoreable Forecasts"
+          },
+          "unevaluated_forecasts": {
+            "type": "integer",
+            "title": "Unevaluated Forecasts"
+          },
+          "unavailable_evaluation_forecasts": {
+            "type": "integer",
+            "title": "Unavailable Evaluation Forecasts"
+          },
+          "invalid_evidence_forecasts": {
+            "type": "integer",
+            "title": "Invalid Evidence Forecasts"
+          },
+          "unavailable_forecasts": {
+            "type": "integer",
+            "title": "Unavailable Forecasts"
+          },
+          "total_cell_windows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Cell Windows"
+          },
+          "observed_cell_windows": {
+            "type": "integer",
+            "title": "Observed Cell Windows"
+          },
+          "unscored_cell_windows": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unscored Cell Windows"
+          },
+          "missing_cell_windows": {
+            "type": "integer",
+            "title": "Missing Cell Windows"
+          },
+          "paired_cell_windows": {
+            "type": "integer",
+            "title": "Paired Cell Windows"
+          },
+          "paired_missing_cell_windows": {
+            "type": "integer",
+            "title": "Paired Missing Cell Windows"
+          },
+          "excluded_observed_cell_windows": {
+            "type": "integer",
+            "title": "Excluded Observed Cell Windows"
+          },
+          "excluded_missing_cell_windows": {
+            "type": "integer",
+            "title": "Excluded Missing Cell Windows"
+          },
+          "unknown_cell_window_forecasts": {
+            "type": "integer",
+            "title": "Unknown Cell Window Forecasts"
+          },
+          "uncertainty": {
+            "$ref": "#/components/schemas/PairedUncertainty"
+          },
+          "reference_model_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reference Model Ids"
+          },
+          "reference_model_count": {
+            "type": "integer",
+            "title": "Reference Model Count"
+          },
+          "reference_forecast_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reference Forecast Ids"
+          },
+          "reference_forecast_count": {
+            "type": "integer",
+            "title": "Reference Forecast Count"
+          },
+          "reference_evaluation_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reference Evaluation Ids"
+          },
+          "reference_evaluation_count": {
+            "type": "integer",
+            "title": "Reference Evaluation Count"
+          },
+          "mixed_reference_models": {
+            "type": "boolean",
+            "title": "Mixed Reference Models"
+          },
+          "exclusion_reasons": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Exclusion Reasons"
+          },
+          "primary_exclusion_reasons": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Primary Exclusion Reasons"
+          },
+          "decisions": {
+            "items": {
+              "$ref": "#/components/schemas/PairDecision"
+            },
+            "type": "array",
+            "title": "Decisions"
+          }
+        },
+        "type": "object",
+        "required": [
+          "model_id",
+          "algorithm",
+          "metrics",
+          "paired_metrics",
+          "reference_metrics",
+          "brier_skill",
+          "brier_skill_reason",
+          "paired_days",
+          "excluded_days",
+          "paired_forecasts",
+          "excluded_forecasts",
+          "total_forecasts",
+          "evaluated_forecasts",
+          "scoreable_forecasts",
+          "unevaluated_forecasts",
+          "unavailable_evaluation_forecasts",
+          "invalid_evidence_forecasts",
+          "unavailable_forecasts",
+          "total_cell_windows",
+          "observed_cell_windows",
+          "unscored_cell_windows",
+          "missing_cell_windows",
+          "paired_cell_windows",
+          "paired_missing_cell_windows",
+          "excluded_observed_cell_windows",
+          "excluded_missing_cell_windows",
+          "unknown_cell_window_forecasts",
+          "uncertainty",
+          "reference_model_ids",
+          "reference_model_count",
+          "reference_forecast_ids",
+          "reference_forecast_count",
+          "reference_evaluation_ids",
+          "reference_evaluation_count",
+          "mixed_reference_models",
+          "exclusion_reasons",
+          "primary_exclusion_reasons",
+          "decisions"
+        ],
+        "title": "ModelComparison"
+      },
       "ModelView": {
         "properties": {
           "id": {
@@ -1757,6 +2687,508 @@
         ],
         "title": "ModelView"
       },
+      "PairDecision": {
+        "properties": {
+          "forecast_id": {
+            "type": "string",
+            "title": "Forecast Id"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "evaluation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Id"
+          },
+          "evaluation_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluation Version"
+          },
+          "experiment_id": {
+            "type": "string",
+            "title": "Experiment Id"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "prospective",
+              "retrospective_revised",
+              "synthetic_demo"
+            ],
+            "title": "Mode"
+          },
+          "grid_hash": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grid Hash"
+          },
+          "revision_signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision Signature"
+          },
+          "cell_signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cell Signature"
+          },
+          "observation_signature": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observation Signature"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "paired",
+              "excluded"
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          },
+          "reference_forecast_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Forecast Id"
+          },
+          "reference_model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Model Id"
+          },
+          "reference_evaluation_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Evaluation Id"
+          },
+          "reference_evaluation_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Evaluation Version"
+          },
+          "reference_created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Created At"
+          },
+          "self_reference": {
+            "type": "boolean",
+            "title": "Self Reference"
+          },
+          "reference_rejections": {
+            "items": {
+              "$ref": "#/components/schemas/ReferenceRejection"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Reference Rejections",
+            "description": "First rejected references in deterministic search order; examples only, capped at 20."
+          },
+          "reference_rejection_limit": {
+            "type": "integer",
+            "const": 20,
+            "title": "Reference Rejection Limit"
+          },
+          "reference_rejection_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Reference Rejection Count",
+            "description": "All rejected references examined before the selected reference, or all if none matched."
+          },
+          "reference_rejections_omitted": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Reference Rejections Omitted",
+            "description": "Examined rejected references omitted from the bounded identity examples."
+          },
+          "reference_rejection_reasons": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Reference Rejection Reasons",
+            "description": "Complete counts by reason across examined rejections; one reference can have multiple reasons."
+          }
+        },
+        "type": "object",
+        "required": [
+          "forecast_id",
+          "model_id",
+          "evaluation_id",
+          "evaluation_version",
+          "experiment_id",
+          "start",
+          "end",
+          "mode",
+          "grid_hash",
+          "revision_signature",
+          "cell_signature",
+          "observation_signature",
+          "status",
+          "reason",
+          "reasons",
+          "reference_forecast_id",
+          "reference_model_id",
+          "reference_evaluation_id",
+          "reference_evaluation_version",
+          "reference_created_at",
+          "self_reference",
+          "reference_rejections",
+          "reference_rejection_limit",
+          "reference_rejection_count",
+          "reference_rejections_omitted",
+          "reference_rejection_reasons"
+        ],
+        "title": "PairDecision"
+      },
+      "PairedUncertainty": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "available",
+              "insufficient_data"
+            ],
+            "title": "Status"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "invalid_scores",
+                  "invalid_windows",
+                  "non_24h_windows",
+                  "duplicate_windows",
+                  "nonconsecutive_windows",
+                  "insufficient_days"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "days": {
+            "type": "integer",
+            "title": "Days"
+          },
+          "minimum_days": {
+            "type": "integer",
+            "title": "Minimum Days"
+          },
+          "block_days": {
+            "type": "integer",
+            "title": "Block Days"
+          },
+          "simulations": {
+            "type": "integer",
+            "title": "Simulations"
+          },
+          "seed": {
+            "type": "integer",
+            "title": "Seed"
+          },
+          "paired_cell_windows": {
+            "type": "integer",
+            "title": "Paired Cell Windows"
+          },
+          "mean_difference": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mean Difference"
+          },
+          "interval95": {
+            "anyOf": [
+              {
+                "prefixItems": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "number"
+                  }
+                ],
+                "type": "array",
+                "maxItems": 2,
+                "minItems": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interval95"
+          },
+          "method_version": {
+            "type": "string",
+            "title": "Method Version"
+          },
+          "estimand": {
+            "type": "string",
+            "title": "Estimand"
+          },
+          "policy": {
+            "type": "string",
+            "title": "Policy"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "reason",
+          "days",
+          "minimum_days",
+          "block_days",
+          "simulations",
+          "seed",
+          "paired_cell_windows",
+          "mean_difference",
+          "interval95",
+          "method_version",
+          "estimand",
+          "policy"
+        ],
+        "title": "PairedUncertainty"
+      },
+      "PooledScore": {
+        "properties": {
+          "n": {
+            "type": "integer",
+            "title": "N"
+          },
+          "missing": {
+            "type": "integer",
+            "title": "Missing"
+          },
+          "positives": {
+            "type": "integer",
+            "title": "Positives"
+          },
+          "tp": {
+            "type": "integer",
+            "title": "Tp"
+          },
+          "fp": {
+            "type": "integer",
+            "title": "Fp"
+          },
+          "tn": {
+            "type": "integer",
+            "title": "Tn"
+          },
+          "fn": {
+            "type": "integer",
+            "title": "Fn"
+          },
+          "brier_sum": {
+            "type": "number",
+            "title": "Brier Sum"
+          },
+          "log_loss_sum": {
+            "type": "number",
+            "title": "Log Loss Sum"
+          },
+          "red_area": {
+            "type": "number",
+            "title": "Red Area"
+          },
+          "eligible_area": {
+            "type": "number",
+            "title": "Eligible Area"
+          },
+          "brier": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Brier"
+          },
+          "log_loss": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Log Loss"
+          },
+          "recall": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recall"
+          },
+          "precision": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Precision"
+          },
+          "false_positive_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "False Positive Rate"
+          },
+          "red_coverage": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Red Coverage"
+          }
+        },
+        "type": "object",
+        "required": [
+          "n",
+          "missing",
+          "positives",
+          "tp",
+          "fp",
+          "tn",
+          "fn",
+          "brier_sum",
+          "log_loss_sum",
+          "red_area",
+          "eligible_area",
+          "brier",
+          "log_loss",
+          "recall",
+          "precision",
+          "false_positive_rate",
+          "red_coverage"
+        ],
+        "title": "PooledScore"
+      },
       "PromotionRequest": {
         "properties": {
           "model_id": {
@@ -1776,6 +3208,167 @@
           "reason"
         ],
         "title": "PromotionRequest"
+      },
+      "ReferenceRejection": {
+        "properties": {
+          "forecast_id": {
+            "type": "string",
+            "title": "Forecast Id"
+          },
+          "reasons": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Reasons"
+          }
+        },
+        "type": "object",
+        "required": [
+          "forecast_id",
+          "reasons"
+        ],
+        "title": "ReferenceRejection"
+      },
+      "ReportCounts": {
+        "properties": {
+          "forecast_count": {
+            "type": "integer",
+            "title": "Forecast Count"
+          },
+          "evaluation_count": {
+            "type": "integer",
+            "title": "Evaluation Count"
+          },
+          "forecast_cell_rows": {
+            "type": "integer",
+            "title": "Forecast Cell Rows"
+          },
+          "evaluation_cell_rows": {
+            "type": "integer",
+            "title": "Evaluation Cell Rows"
+          }
+        },
+        "type": "object",
+        "required": [
+          "forecast_count",
+          "evaluation_count",
+          "forecast_cell_rows",
+          "evaluation_cell_rows"
+        ],
+        "title": "ReportCounts"
+      },
+      "ReportExperiment": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "config_hash": {
+            "type": "string",
+            "title": "Config Hash"
+          },
+          "config": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/JsonValue"
+            },
+            "type": "object",
+            "title": "Config"
+          },
+          "grid_id": {
+            "type": "string",
+            "title": "Grid Id"
+          },
+          "grid_hash": {
+            "type": "string",
+            "title": "Grid Hash"
+          },
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "source_name": {
+            "type": "string",
+            "title": "Source Name"
+          },
+          "source_provider": {
+            "type": "string",
+            "title": "Source Provider"
+          },
+          "synthetic": {
+            "type": "boolean",
+            "title": "Synthetic"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "config_hash",
+          "config",
+          "grid_id",
+          "grid_hash",
+          "source_id",
+          "source_name",
+          "source_provider",
+          "synthetic"
+        ],
+        "title": "ReportExperiment"
+      },
+      "ReportLimits": {
+        "properties": {
+          "max_span_days": {
+            "type": "integer",
+            "title": "Max Span Days"
+          },
+          "max_forecasts": {
+            "type": "integer",
+            "title": "Max Forecasts"
+          },
+          "max_cell_rows": {
+            "type": "integer",
+            "title": "Max Cell Rows"
+          },
+          "max_grid_cells": {
+            "type": "integer",
+            "title": "Max Grid Cells"
+          }
+        },
+        "type": "object",
+        "required": [
+          "max_span_days",
+          "max_forecasts",
+          "max_cell_rows",
+          "max_grid_cells"
+        ],
+        "title": "ReportLimits"
+      },
+      "ReportPolicies": {
+        "properties": {
+          "generation": {
+            "type": "string",
+            "title": "Generation"
+          },
+          "evaluation": {
+            "type": "string",
+            "title": "Evaluation"
+          },
+          "inclusion": {
+            "type": "string",
+            "title": "Inclusion"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generation",
+          "evaluation",
+          "inclusion"
+        ],
+        "title": "ReportPolicies"
       },
       "ValidationError": {
         "properties": {

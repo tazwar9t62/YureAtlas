@@ -1,10 +1,9 @@
 import json
 from datetime import timedelta
-from itertools import pairwise
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field
 from sqlalchemy import func, select, text
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -16,9 +15,11 @@ from .schemas import (
     EvaluationView,
     ExperimentSpec,
     ExperimentView,
+    ForecastMode,
     ForecastView,
     JobRequest,
     JobView,
+    MetricReport,
     ModelView,
 )
 
@@ -448,88 +449,26 @@ def event_revisions(event_id: str) -> list[dict]:
         ]
 
 
-@app.get("/metrics")
-def metrics(experiment_id: str, mode: str, days: int = Query(30, ge=0, le=3650)) -> dict:
-    from .artifacts import digest
-    from .metrics import aggregate, brier_skill, paired_block_interval
+def _metric_report(experiment_id, mode, days, start, end):
+    from .reports import ReportNotFound, ReportTimeout, build_metric_report
 
-    with transaction() as s:
-        query = (
-            select(t.Forecast, t.Model)
-            .join(t.Model, t.Model.id == t.Forecast.model_id)
-            .where(t.Forecast.experiment_id == experiment_id, t.Forecast.mode == mode)
-        )
-        forecasts = list(s.execute(query.order_by(t.Forecast.start)))
-        if forecasts and days:
-            latest = max(f.end for f, m in forecasts)
-            forecasts = [(f, m) for f, m in forecasts if f.start >= latest - timedelta(days=days)]
-        records = []
-        for f, m in forecasts:
-            e = latest_evaluation(s, f.id)
-            if not e:
-                continue
-            snapshot = s.get(t.Snapshot, e.snapshot_id)
-            signature = digest(snapshot.revision_ids)
-            records.append(
-                {
-                    "date": f.start.isoformat(),
-                    "forecast_id": f.id,
-                    "model_id": m.id,
-                    "algorithm": m.algorithm,
-                    "evaluation_id": e.id,
-                    "evaluation_version": e.version,
-                    "status": e.status,
-                    "snapshot": signature,
-                    "metrics": e.metrics,
-                }
-            )
-        baseline = {r["date"]: r for r in records if r["algorithm"] == "historical_rate"}
-        models = {}
-        for r in records:
-            models.setdefault(r["model_id"], []).append(r)
-        comparisons = []
-        for model_id, series in models.items():
-            paired = [
-                r
-                for r in series
-                if r["date"] in baseline
-                and r["metrics"]["n"] > 0
-                and r["snapshot"] == baseline[r["date"]]["snapshot"]
-                and r["metrics"]["n"] == baseline[r["date"]]["metrics"]["n"]
-            ]
-            model_score = aggregate([r["metrics"] for r in paired])
-            reference_score = aggregate([baseline[r["date"]]["metrics"] for r in paired])
-            # Only contiguous daily sequences qualify for time-block uncertainty.
-            from .timeutil import utc
+    try:
+        return build_metric_report(experiment_id, mode, days=days, start=start, end=end)
+    except ReportNotFound as error:
+        raise HTTPException(404, str(error)) from error
+    except ReportTimeout as error:
+        raise HTTPException(503, str(error)) from error
 
-            dates = sorted(utc(r["date"]) for r in paired)
-            contiguous = all(b - a == timedelta(days=1) for a, b in pairwise(dates))
-            uncertainty = (
-                paired_block_interval(
-                    [r["metrics"]["brier"] - baseline[r["date"]]["metrics"]["brier"] for r in paired]
-                )
-                if contiguous
-                else {"status": "insufficient_data", "reason": "Nonconsecutive eligible days"}
-            )
-            comparisons.append(
-                {
-                    "model_id": model_id,
-                    "algorithm": series[0]["algorithm"],
-                    "metrics": aggregate([r["metrics"] for r in series]),
-                    "paired_metrics": model_score,
-                    "brier_skill": brier_skill(model_score["brier"], reference_score["brier"]),
-                    "paired_days": len(paired),
-                    "excluded_days": len(series) - len(paired),
-                    "uncertainty": uncertainty,
-                }
-            )
-        return {
-            "mode": mode,
-            "days": days,
-            "series": records,
-            "comparisons": comparisons,
-            "matching_policy": "same experiment, start, mode, observation revision set and eligible cells",
-        }
+
+@app.get("/metrics", response_model=MetricReport)
+def metrics(
+    experiment_id: str,
+    mode: ForecastMode,
+    days: int | None = Query(None, ge=0, le=3650),
+    start: AwareDatetime | None = None,
+    end: AwareDatetime | None = None,
+) -> dict:
+    return _metric_report(experiment_id, mode, days, start, end)
 
 
 def unique_mapping_object(pairs):
@@ -612,9 +551,28 @@ def export_forecast(forecast_id: str):
     )
 
 
-@app.get("/exports/metrics")
-def export_metrics(experiment_id: str, mode: str):
+@app.get("/exports/metrics", response_model=MetricReport)
+def export_metrics(
+    experiment_id: str,
+    mode: ForecastMode,
+    days: int | None = Query(None, ge=0, le=3650),
+    start: AwareDatetime | None = None,
+    end: AwareDatetime | None = None,
+    expected_report_id: str | None = Query(None, pattern=r"^[0-9a-f]{64}$"),
+):
+    report = _metric_report(experiment_id, mode, days, start, end)
+    if expected_report_id is not None and expected_report_id != report["report_id"]:
+        raise HTTPException(
+            409,
+            {
+                "message": "Report content changed; refresh the report or download the already loaded JSON",
+                "expected_report_id": expected_report_id,
+                "current_report_id": report["report_id"],
+            },
+        )
     return JSONResponse(
-        metrics(experiment_id, mode, 0),
-        headers={"Content-Disposition": 'attachment; filename="yureatlas-metrics.json"'},
+        report,
+        headers={
+            "Content-Disposition": f'attachment; filename="yureatlas-metrics-{report["report_id"][:12]}.json"'
+        },
     )

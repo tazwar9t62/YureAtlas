@@ -40,6 +40,15 @@ import {
   type SourceReport,
 } from "@/lib/api";
 import { Calibration, HistoryChart, ScoreStrip } from "./scores";
+import { ComparisonTable, ReportSummary } from "./reporting";
+import {
+  downloadReport,
+  reportMatchesQuery,
+  reportQuery,
+  reportReason,
+  windowLabel,
+  type ReportPeriod,
+} from "@/lib/reports";
 
 const ForecastMap = dynamic(() => import("./forecast-map"), {
   ssr: false,
@@ -65,14 +74,28 @@ export default function Workbench() {
   const [models, setModels] = useState<Model[]>([]);
   const [forecasts, setForecasts] = useState<Forecast[]>([]);
   const [modelId, setModelId] = useState("");
-  const [windowStart, setWindowStart] = useState("");
+  const [windowId, setWindowId] = useState("");
   const [mode, setMode] = useState("synthetic_demo");
-  const [data, setData] = useState<MapData | null>(null);
+  const [mapLoad, setMapLoad] = useState<{
+    key: string;
+    data: MapData;
+    versions: Evaluation[];
+  } | null>(null);
+  const [mapFailure, setMapFailure] = useState<{
+    key: string;
+    message: string;
+  } | null>(null);
   const [cell, setCell] = useState<CellDetail | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
   const [sources, setSources] = useState<SourceReport | null>(null);
-  const [report, setReport] = useState<MetricReport | null>(null);
-  const [versions, setVersions] = useState<Evaluation[]>([]);
+  const [reportLoad, setReportLoad] = useState<{
+    key: string;
+    value: MetricReport;
+  } | null>(null);
+  const [reportFailure, setReportFailure] = useState<{
+    key: string;
+    message: string;
+  } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -81,14 +104,102 @@ export default function Workbench() {
   const [showCells, setShowCells] = useState(true);
   const [showEvents, setShowEvents] = useState(true);
   const [compare, setCompare] = useState(false);
-  const [baselineData, setBaselineData] = useState<MapData | null>(null);
-  const [period, setPeriod] = useState(30);
+  const [baselineLoad, setBaselineLoad] = useState<{
+    key: string;
+    value: MapData;
+  } | null>(null);
+  const [baselineFailure, setBaselineFailure] = useState<{
+    key: string;
+    message: string;
+  } | null>(null);
+  const [period, setPeriod] = useState<ReportPeriod>("30");
+  const [reportStart, setReportStart] = useState("");
+  const [reportEnd, setReportEnd] = useState("");
   const experiment = experiments.find((e) => e.id === experimentId);
-  const availableForecasts = forecasts.filter((f) => f.mode === mode);
-  const windows = [...new Set(availableForecasts.map((f) => f.start))].sort();
-  const forecast = availableForecasts.find(
-    (f) => f.model_id === modelId && f.start === windowStart,
+  const availableForecasts = forecasts.filter(
+    (f) => f.experiment_id === experimentId && f.mode === mode,
   );
+  const modelForecasts = availableForecasts
+    .filter((f) => f.model_id === modelId)
+    .sort(
+      (a, b) =>
+        Date.parse(a.start) - Date.parse(b.start) ||
+        Date.parse(a.end) - Date.parse(b.end) ||
+        a.id.localeCompare(b.id),
+    );
+  const forecast =
+    modelForecasts.find((f) => f.id === windowId) ?? modelForecasts.at(-1);
+  const windows = modelForecasts.map((f) => f.id);
+  const selectedWindowId = forecast?.id ?? "";
+  const mapKey = forecast ? `${experimentId}:${forecast.id}:${refresh}` : "";
+  const data = mapLoad?.key === mapKey ? mapLoad.data : null;
+  const mapError = mapFailure?.key === mapKey ? mapFailure.message : null;
+  const versions = mapLoad?.key === mapKey ? mapLoad.versions : [];
+  const requestedReport = reportQuery(
+    experimentId,
+    mode,
+    period,
+    reportStart,
+    reportEnd,
+  );
+  const reportKey = `${requestedReport.query ?? "invalid"}:${experimentId}:${mode}:${period}:${reportStart}:${reportEnd}:${refresh}`;
+  // Keys invalidate displayed evidence during render, before effect cleanup runs.
+  const report = reportLoad?.key === reportKey ? reportLoad.value : null;
+  const reportError =
+    requestedReport.error ??
+    (reportFailure?.key === reportKey ? reportFailure.message : null);
+  const reportLoading = Boolean(
+    requestedReport.query && !report && !reportError,
+  );
+  const pair = report?.decisions.find((d) => d.forecast_id === forecast?.id);
+  const baselineKey =
+    compare && pair?.status === "paired"
+      ? `${reportKey}:${report?.report_id}:${pair.forecast_id}:${pair.evaluation_id}:${pair.reference_forecast_id}:${pair.reference_evaluation_id}`
+      : "";
+  const baselineData =
+    baselineLoad?.key === baselineKey ? baselineLoad.value : null;
+  const baselineError =
+    baselineFailure?.key === baselineKey ? baselineFailure.message : null;
+  const mapComparisonReady = Boolean(
+    pair?.status === "paired" &&
+    data?.evaluation?.id === pair.evaluation_id &&
+    baselineData?.evaluation?.id === pair.reference_evaluation_id,
+  );
+  const candidateBrier = report?.series.find(
+    (row) =>
+      row.forecast_id === pair?.forecast_id &&
+      row.evaluation_id === pair?.evaluation_id,
+  )?.metrics.brier;
+  const referenceBrier = report?.series.find(
+    (row) =>
+      row.forecast_id === pair?.reference_forecast_id &&
+      row.evaluation_id === pair?.reference_evaluation_id,
+  )?.metrics.brier;
+  const mapDifference =
+    mapComparisonReady &&
+    typeof candidateBrier === "number" &&
+    typeof referenceBrier === "number"
+      ? candidateBrier - referenceBrier
+      : null;
+  const mapComparisonMessage = !report
+    ? (reportError ?? "Load the report for the current scope to compare maps.")
+    : !pair
+      ? "Selected forecast is outside the displayed report scope."
+      : pair.status !== "paired"
+        ? `No matched reference: ${pair.reasons.map(reportReason).join("; ")}.`
+        : !data
+          ? mapError
+            ? `Selected forecast map unavailable: ${mapError}`
+            : "Loading the selected forecast evaluation…"
+          : data.evaluation?.id !== pair.evaluation_id
+            ? "Selected evaluation changed since this report. Refresh to align the report and maps; the difference is unavailable."
+            : baselineError
+              ? `Reference map unavailable: ${baselineError}`
+              : !baselineData
+                ? "Loading the report's chosen reference…"
+                : baselineData.evaluation?.id !== pair.reference_evaluation_id
+                  ? "Reference evaluation changed since this report. Refresh to align the report and maps; the difference is unavailable."
+                  : "Both map evaluations match the displayed report.";
   const selectedModel = models.find((m) => m.id === modelId);
   const evaluation = data?.evaluation;
   const scores = evaluation?.metrics as unknown as Scores | undefined;
@@ -149,7 +260,7 @@ export default function Workbench() {
   useEffect(() => {
     if (!experimentId) return;
     let cancelled = false;
-    setData(null);
+    setMapLoad(null);
     setCell(null);
     Promise.all([
       request<Model[]>(`/models?experiment_id=${experimentId}`),
@@ -180,79 +291,82 @@ export default function Workbench() {
                 ? "synthetic_demo"
                 : "prospective")),
         );
-        setWindowStart((current) =>
-          f.some((row) => row.start === current)
-            ? current
-            : (f[0]?.start ?? ""),
+        setWindowId((current) =>
+          f.some((row) => row.id === current) ? current : (f[0]?.id ?? ""),
         );
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => {
+        if (!cancelled) setError(e.message);
+      });
     return () => {
       cancelled = true;
     };
   }, [experimentId, refresh]); // Experiment changes reset server-derived selections.
   useEffect(() => {
+    setMapFailure(null);
     if (!forecast) {
-      setData(null);
+      setMapLoad(null);
       return;
     }
     let cancelled = false;
     setCell(null);
-    setData(null);
+    setMapLoad(null);
     Promise.all([
       request<MapData>(`/forecasts/${forecast.id}/map`),
       request<Evaluation[]>(`/forecasts/${forecast.id}/evaluations`),
     ])
       .then(([map, history]) => {
         if (!cancelled) {
-          setData(map);
-          setVersions(history);
+          setMapLoad({ key: mapKey, data: map, versions: history });
         }
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => {
+        if (!cancelled) setMapFailure({ key: mapKey, message: e.message });
+      });
     return () => {
       cancelled = true;
     };
-  }, [forecast?.id, refresh]);
+  }, [mapKey]);
   useEffect(() => {
-    if (!experimentId) return;
+    setReportLoad(null);
+    setReportFailure(null);
+    if (!requestedReport.query) return;
+    const query = requestedReport.query;
     let cancelled = false;
-    request<MetricReport>(
-      `/metrics?experiment_id=${experimentId}&mode=${mode}&days=${period}`,
-    )
+    request<MetricReport>(`/metrics?${query}`)
       .then((r) => {
-        if (!cancelled) setReport(r);
+        if (cancelled) return;
+        if (!reportMatchesQuery(r, query))
+          throw new Error(
+            "The returned report does not match the selected scope. Refresh to retry.",
+          );
+        setReportLoad({ key: reportKey, value: r });
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => {
+        if (!cancelled)
+          setReportFailure({ key: reportKey, message: e.message });
+      });
     return () => {
       cancelled = true;
     };
-  }, [experimentId, mode, period, refresh]);
+  }, [reportKey, requestedReport.query]);
   useEffect(() => {
-    const baselineModel = models.find(
-      (m) =>
-        m.algorithm === "historical_rate" &&
-        availableForecasts.some(
-          (f) => f.model_id === m.id && f.start === windowStart,
-        ),
-    );
-    const baseline = availableForecasts.find(
-      (f) => f.model_id === baselineModel?.id && f.start === windowStart,
-    );
-    if (!compare || !baseline) {
-      setBaselineData(null);
-      return;
-    }
+    setBaselineLoad(null);
+    setBaselineFailure(null);
+    if (!baselineKey || !pair?.reference_forecast_id) return;
     let cancelled = false;
-    request<MapData>(`/forecasts/${baseline.id}/map`)
+    request<MapData>(`/forecasts/${pair.reference_forecast_id}/map`)
       .then((d) => {
-        if (!cancelled) setBaselineData(d);
+        if (!cancelled) setBaselineLoad({ key: baselineKey, value: d });
       })
-      .catch((e) => setError(e.message));
+      .catch((e) => {
+        if (!cancelled)
+          setBaselineFailure({ key: baselineKey, message: e.message });
+      });
     return () => {
       cancelled = true;
     };
-  }, [compare, modelId, windowStart, mode, models, forecasts]);
+  }, [baselineKey, pair?.reference_forecast_id]);
 
   async function action(path: string, body: unknown = {}) {
     setSending(true);
@@ -468,9 +582,9 @@ export default function Workbench() {
                     value={mode}
                     onChange={(e) => {
                       setMode(e.target.value);
-                      setWindowStart(
-                        forecasts.find((f) => f.mode === e.target.value)
-                          ?.start ?? "",
+                      setWindowId(
+                        forecasts.find((f) => f.mode === e.target.value)?.id ??
+                          "",
                       );
                     }}
                   >
@@ -490,7 +604,17 @@ export default function Workbench() {
                     <select
                       aria-label="Model"
                       value={modelId}
-                      onChange={(e) => setModelId(e.target.value)}
+                      onChange={(e) => {
+                        setModelId(e.target.value);
+                        setWindowId(
+                          availableForecasts.find(
+                            (f) =>
+                              f.model_id === e.target.value &&
+                              f.start === forecast?.start &&
+                              f.end === forecast?.end,
+                          )?.id ?? "",
+                        );
+                      }}
                     >
                       <option value="" disabled>
                         No fitted model
@@ -499,6 +623,25 @@ export default function Workbench() {
                         <option key={m.id} value={m.id}>
                           {algorithmLabel[m.algorithm]} · {m.id.slice(0, 6)}
                           {m.status !== "available" ? " · unavailable" : ""}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                {(tab === "atlas" || tab === "evaluation") && (
+                  <label className="window-filter">
+                    Saved forecast window
+                    <select
+                      aria-label="Saved forecast window"
+                      value={selectedWindowId}
+                      onChange={(e) => setWindowId(e.target.value)}
+                    >
+                      {!modelForecasts.length && (
+                        <option value="">No saved forecast</option>
+                      )}
+                      {modelForecasts.map((f) => (
+                        <option key={f.id} value={f.id}>
+                          {windowLabel(f.start, f.end)} · {f.id.slice(0, 8)}
                         </option>
                       ))}
                     </select>
@@ -615,28 +758,70 @@ export default function Workbench() {
                         {compare && (
                           <div>
                             <div className="map-title">
-                              Historical rate · identical scale and window
+                              Chosen reference ·{" "}
+                              {pair?.reference_model_id?.slice(0, 8) ??
+                                "unavailable"}
                             </div>
-                            <ForecastMap
-                              data={baselineData}
-                              onSelect={selectCell}
-                              selected={cell?.cell_id ?? null}
-                              showCells={showCells}
-                              showEvents={showEvents}
-                              redThreshold={red}
-                              yellowThreshold={yellow}
-                            />
+                            {mapComparisonReady ? (
+                              <ForecastMap
+                                data={baselineData}
+                                onSelect={selectCell}
+                                selected={cell?.cell_id ?? null}
+                                showCells={showCells}
+                                showEvents={showEvents}
+                                redThreshold={red}
+                                yellowThreshold={yellow}
+                              />
+                            ) : (
+                              <div className="map-placeholder">
+                                Reference map requires matching report
+                                evaluations.
+                              </div>
+                            )}
                           </div>
                         )}
                       </div>
+                      {mapError && (
+                        <p className="panel-note" role="status">
+                          Selected forecast unavailable: {mapError}
+                        </p>
+                      )}
+                      {compare && (
+                        <div className="map-comparison-evidence">
+                          <p role="status">{mapComparisonMessage}</p>
+                          {pair?.reference_forecast_id && (
+                            <p>
+                              Reference forecast{" "}
+                              <span className="mono">
+                                {pair.reference_forecast_id}
+                              </span>{" "}
+                              · evaluation v{pair.reference_evaluation_version}{" "}
+                              <span className="mono">
+                                {pair.reference_evaluation_id}
+                              </span>
+                              {pair.self_reference ? " · Self-reference" : ""}
+                            </p>
+                          )}
+                          <p>
+                            Selected-window Brier difference (candidate −
+                            reference):{" "}
+                            <output
+                              aria-label="Matched Brier difference"
+                              aria-disabled={mapDifference === null}
+                            >
+                              {decimal(mapDifference)}
+                            </output>
+                          </p>
+                        </div>
+                      )}
                       <div className="history-control">
                         <button
                           className="icon-button"
-                          aria-label="Previous day"
-                          disabled={windows.indexOf(windowStart) <= 0}
+                          aria-label="Previous forecast"
+                          disabled={windows.indexOf(selectedWindowId) <= 0}
                           onClick={() =>
-                            setWindowStart(
-                              windows[windows.indexOf(windowStart) - 1],
+                            setWindowId(
+                              windows[windows.indexOf(selectedWindowId) - 1],
                             )
                           }
                         >
@@ -647,30 +832,31 @@ export default function Workbench() {
                           type="range"
                           min={0}
                           max={Math.max(0, windows.length - 1)}
-                          value={Math.max(0, windows.indexOf(windowStart))}
+                          value={Math.max(0, windows.indexOf(selectedWindowId))}
                           disabled={!windows.length}
                           onChange={(e) =>
-                            setWindowStart(windows[Number(e.target.value)])
+                            setWindowId(windows[Number(e.target.value)])
                           }
                         />
                         <button
                           className="icon-button"
-                          aria-label="Next day"
+                          aria-label="Next forecast"
                           disabled={
                             !windows.length ||
-                            windows.indexOf(windowStart) >= windows.length - 1
+                            windows.indexOf(selectedWindowId) >=
+                              windows.length - 1
                           }
                           onClick={() =>
-                            setWindowStart(
-                              windows[windows.indexOf(windowStart) + 1],
+                            setWindowId(
+                              windows[windows.indexOf(selectedWindowId) + 1],
                             )
                           }
                         >
                           <ChevronRight size={18} />
                         </button>
                         <span>
-                          {windowStart
-                            ? dateLabel(windowStart)
+                          {forecast
+                            ? dateLabel(forecast.start, true)
                             : "No saved windows"}
                         </span>
                       </div>
@@ -813,20 +999,23 @@ export default function Workbench() {
               {tab === "evaluation" && (
                 <>
                   <div className="section-heading">
-                    <h2>Matched observation windows</h2>
+                    <h2>Report scope</h2>
                     <label className="inline-label">
                       Period
                       <select
                         aria-label="Score period"
                         value={period}
-                        onChange={(e) => setPeriod(Number(e.target.value))}
+                        onChange={(e) =>
+                          setPeriod(e.target.value as ReportPeriod)
+                        }
                       >
                         {[
-                          [1, "Daily"],
-                          [7, "7 days"],
-                          [30, "30 days"],
-                          [90, "90 days"],
-                          [0, "Whole experiment"],
+                          ["1", "Daily"],
+                          ["7", "7 days"],
+                          ["30", "30 days"],
+                          ["90", "90 days"],
+                          ["0", "Whole experiment"],
+                          ["custom", "Custom JST dates"],
                         ].map(([n, label]) => (
                           <option key={n} value={n}>
                             {label}
@@ -834,6 +1023,41 @@ export default function Workbench() {
                         ))}
                       </select>
                     </label>
+                  </div>
+                  {period === "custom" && (
+                    <div className="report-date-controls">
+                      <label>
+                        Start date · JST, inclusive
+                        <input
+                          type="date"
+                          aria-label="Report start date (JST, inclusive)"
+                          value={reportStart}
+                          onChange={(e) => setReportStart(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        End date · JST, exclusive
+                        <input
+                          type="date"
+                          aria-label="Report end date (JST, exclusive)"
+                          value={reportEnd}
+                          onChange={(e) => setReportEnd(e.target.value)}
+                        />
+                      </label>
+                      <p>
+                        Both bounds are midnight JST. A forecast must fit
+                        entirely inside this interval; the end date itself is
+                        excluded.
+                      </p>
+                    </div>
+                  )}
+                  <ReportSummary
+                    report={report}
+                    loading={reportLoading}
+                    error={reportError}
+                  />
+                  <div className="section-heading">
+                    <h2>All valid evaluated windows · selected period</h2>
                   </div>
                   <ScoreStrip
                     scores={
@@ -843,7 +1067,15 @@ export default function Workbench() {
                   />
                   <div className="chart-grid">
                     <HistoryChart report={report} />
-                    <Calibration scores={scores ?? null} />
+                    <Calibration
+                      scores={scores ?? null}
+                      window={
+                        forecast
+                          ? windowLabel(forecast.start, forecast.end)
+                          : null
+                      }
+                      evaluationVersion={evaluation?.version}
+                    />
                   </div>
                   <ComparisonTable report={report} />
                   <div className="chart-grid">
@@ -851,8 +1083,8 @@ export default function Workbench() {
                       <div className="panel-heading">
                         <h3>Selected window · confusion matrix</h3>
                         <span className="muted">
-                          {windowStart
-                            ? dateLabel(windowStart)
+                          {forecast
+                            ? windowLabel(forecast.start, forecast.end)
                             : "Select a saved window"}
                         </span>
                       </div>
@@ -881,8 +1113,8 @@ export default function Workbench() {
                         ))}
                       </div>
                       <p className="panel-note">
-                        Binary cell-day labels. Several earthquakes in one cell
-                        count as one affected cell.
+                        Binary cell-window labels. Several earthquakes in one
+                        cell count as one affected cell.
                       </p>
                     </section>
                     <section className="panel">
@@ -913,13 +1145,16 @@ export default function Workbench() {
                     </section>
                   </div>
                   {experimentId && (
-                    <a
+                    <button
                       className="export-link"
-                      href={`/api/exports/metrics?experiment_id=${experimentId}&mode=${mode}`}
+                      disabled={!report}
+                      onClick={() => {
+                        if (report) downloadReport(report);
+                      }}
                     >
                       <ArrowDownToLine size={15} />
-                      Export comparison report
-                    </a>
+                      Download displayed report
+                    </button>
                   )}
                 </>
               )}
@@ -954,64 +1189,6 @@ export default function Workbench() {
         </main>
       </div>
     </div>
-  );
-}
-
-function ComparisonTable({ report }: { report: MetricReport | null }) {
-  return (
-    <section className="panel comparison-panel">
-      <div className="panel-heading">
-        <h3>Model comparison</h3>
-        <span className="muted">
-          Matching dates, catalogue revisions, and eligible cells
-        </span>
-      </div>
-      <div className="table-scroll">
-        <table>
-          <thead>
-            <tr>
-              <th>Model</th>
-              <th>Brier ↓</th>
-              <th>Log loss ↓</th>
-              <th>Brier skill</th>
-              <th>Recall</th>
-              <th>Precision</th>
-              <th>Paired / excluded days</th>
-            </tr>
-          </thead>
-          <tbody>
-            {report?.comparisons.map((row) => (
-              <tr key={row.model_id}>
-                <td>
-                  {algorithmLabel[row.algorithm]}
-                  <small className="mono">{row.model_id.slice(0, 8)}</small>
-                </td>
-                <td>{decimal(row.paired_metrics.brier)}</td>
-                <td>{decimal(row.paired_metrics.log_loss)}</td>
-                <td>{percent(row.brier_skill)}</td>
-                <td>{percent(row.paired_metrics.recall)}</td>
-                <td>{percent(row.paired_metrics.precision)}</td>
-                <td>
-                  {row.paired_days} / {row.excluded_days}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {!report?.comparisons.length && (
-        <p className="empty-inline">
-          No comparable completed forecasts. Run a backtest or wait for a
-          prospective window to close.
-        </p>
-      )}
-      <p className="panel-note">
-        Brier skill compares identical pairs with the historical baseline.{" "}
-        {report?.comparisons.some((c) => c.uncertainty.status === "available")
-          ? "Paired seven-day block intervals are included in the exported report."
-          : "Insufficient consecutive days for paired time-block uncertainty; no winner is declared."}
-      </p>
-    </section>
   );
 }
 

@@ -485,6 +485,68 @@ export interface components {
             /** File */
             file: string;
         };
+        /** CalibrationBin */
+        CalibrationBin: {
+            /** Lower */
+            lower: number;
+            /** Upper */
+            upper: number;
+            /** Count */
+            count: number;
+            /** Predicted */
+            predicted: number | null;
+            /** Observed */
+            observed: number | null;
+        };
+        /** EvaluatedScore */
+        EvaluatedScore: {
+            /** N */
+            n: number;
+            /** Missing */
+            missing: number;
+            /** Positives */
+            positives: number;
+            /** Tp */
+            tp: number;
+            /** Fp */
+            fp: number;
+            /** Tn */
+            tn: number;
+            /** Fn */
+            fn: number;
+            /** Brier Sum */
+            brier_sum: number;
+            /** Log Loss Sum */
+            log_loss_sum: number;
+            /** Red Area */
+            red_area: number;
+            /** Eligible Area */
+            eligible_area: number;
+            /** Brier */
+            brier: number | null;
+            /** Log Loss */
+            log_loss: number | null;
+            /** Recall */
+            recall: number | null;
+            /** Precision */
+            precision: number | null;
+            /** False Positive Rate */
+            false_positive_rate: number | null;
+            /** Red Coverage */
+            red_coverage: number | null;
+            /** Average Precision */
+            average_precision?: number | null;
+            /** Calibration */
+            calibration?: components["schemas"]["CalibrationBin"][] | null;
+            /** Clipping Epsilon */
+            clipping_epsilon?: number | null;
+            /** Confident Misses */
+            confident_misses?: number | null;
+            /** Threshold */
+            threshold?: number | null;
+            /** Source Policy */
+            source_policy?: string | null;
+        };
         /** EvaluationView */
         EvaluationView: {
             /** Id */
@@ -729,6 +791,190 @@ export interface components {
             /** Cancel Requested */
             cancel_requested: boolean;
         };
+        JsonValue: unknown;
+        /** MetricReport */
+        MetricReport: {
+            /** Report Id */
+            report_id: string;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "prospective" | "retrospective_revised" | "synthetic_demo";
+            /** Days */
+            days: number | null;
+            scope: components["schemas"]["MetricReportScope"];
+            experiment: components["schemas"]["ReportExperiment"];
+            policies: components["schemas"]["ReportPolicies"];
+            counts: components["schemas"]["ReportCounts"];
+            /** Selected Forecast Ids */
+            selected_forecast_ids: string[];
+            /** Selected Evaluation Ids */
+            selected_evaluation_ids: string[];
+            /** Policy Version */
+            policy_version: string;
+            /** Score Policy Version */
+            score_policy_version: string;
+            /** Matching Policy */
+            matching_policy: string;
+            /** Aggregation Policy */
+            aggregation_policy: string;
+            /** Series Policy */
+            series_policy: string;
+            /** Series */
+            series: components["schemas"]["MetricSeriesRow"][];
+            /** Comparisons */
+            comparisons: components["schemas"]["ModelComparison"][];
+            /** Decisions */
+            decisions: components["schemas"]["PairDecision"][];
+        };
+        /** MetricReportScope */
+        MetricReportScope: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "relative" | "explicit" | "whole_experiment";
+            /** Requested Days */
+            requested_days: number | null;
+            /** Requested Start */
+            requested_start: string | null;
+            /** Requested End */
+            requested_end: string | null;
+            /** Resolved Start */
+            resolved_start: string | null;
+            /** Resolved End */
+            resolved_end: string | null;
+            /** Anchor */
+            anchor: string | null;
+            /** Empty Reason */
+            empty_reason: ("no_completed_evaluated_window" | "no_forecasts" | "no_forecasts_in_range") | null;
+            /**
+             * Display Timezone
+             * @constant
+             */
+            display_timezone: "Asia/Tokyo";
+            /** Containment Policy */
+            containment_policy: string;
+            limits: components["schemas"]["ReportLimits"];
+        };
+        /** MetricSeriesRow */
+        MetricSeriesRow: {
+            /**
+             * Date
+             * Format: date-time
+             */
+            date: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** Forecast Id */
+            forecast_id: string;
+            /** Model Id */
+            model_id: string;
+            /** Algorithm */
+            algorithm: string;
+            /** Evaluation Id */
+            evaluation_id: string;
+            /** Evaluation Version */
+            evaluation_version: number;
+            /** Status */
+            status: string;
+            /** Snapshot */
+            snapshot: string;
+            metrics: components["schemas"]["EvaluatedScore"];
+        };
+        /** ModelComparison */
+        ModelComparison: {
+            /** Model Id */
+            model_id: string;
+            /** Algorithm */
+            algorithm: string;
+            metrics: components["schemas"]["PooledScore"];
+            paired_metrics: components["schemas"]["PooledScore"];
+            reference_metrics: components["schemas"]["PooledScore"];
+            /** Brier Skill */
+            brier_skill: number | null;
+            /** Brier Skill Reason */
+            brier_skill_reason: ("no_pairs" | "reference_brier_zero") | null;
+            /** Paired Days */
+            paired_days: number;
+            /** Excluded Days */
+            excluded_days: number;
+            /** Paired Forecasts */
+            paired_forecasts: number;
+            /** Excluded Forecasts */
+            excluded_forecasts: number;
+            /** Total Forecasts */
+            total_forecasts: number;
+            /** Evaluated Forecasts */
+            evaluated_forecasts: number;
+            /** Scoreable Forecasts */
+            scoreable_forecasts: number;
+            /** Unevaluated Forecasts */
+            unevaluated_forecasts: number;
+            /** Unavailable Evaluation Forecasts */
+            unavailable_evaluation_forecasts: number;
+            /** Invalid Evidence Forecasts */
+            invalid_evidence_forecasts: number;
+            /** Unavailable Forecasts */
+            unavailable_forecasts: number;
+            /** Total Cell Windows */
+            total_cell_windows: number | null;
+            /** Observed Cell Windows */
+            observed_cell_windows: number;
+            /** Unscored Cell Windows */
+            unscored_cell_windows: number | null;
+            /** Missing Cell Windows */
+            missing_cell_windows: number;
+            /** Paired Cell Windows */
+            paired_cell_windows: number;
+            /** Paired Missing Cell Windows */
+            paired_missing_cell_windows: number;
+            /** Excluded Observed Cell Windows */
+            excluded_observed_cell_windows: number;
+            /** Excluded Missing Cell Windows */
+            excluded_missing_cell_windows: number;
+            /** Unknown Cell Window Forecasts */
+            unknown_cell_window_forecasts: number;
+            uncertainty: components["schemas"]["PairedUncertainty"];
+            /** Reference Model Ids */
+            reference_model_ids: string[];
+            /** Reference Model Count */
+            reference_model_count: number;
+            /** Reference Forecast Ids */
+            reference_forecast_ids: string[];
+            /** Reference Forecast Count */
+            reference_forecast_count: number;
+            /** Reference Evaluation Ids */
+            reference_evaluation_ids: string[];
+            /** Reference Evaluation Count */
+            reference_evaluation_count: number;
+            /** Mixed Reference Models */
+            mixed_reference_models: boolean;
+            /** Exclusion Reasons */
+            exclusion_reasons: {
+                [key: string]: number;
+            };
+            /** Primary Exclusion Reasons */
+            primary_exclusion_reasons: {
+                [key: string]: number;
+            };
+            /** Decisions */
+            decisions: components["schemas"]["PairDecision"][];
+        };
         /** ModelView */
         ModelView: {
             /** Id */
@@ -756,12 +1002,231 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** PairDecision */
+        PairDecision: {
+            /** Forecast Id */
+            forecast_id: string;
+            /** Model Id */
+            model_id: string;
+            /** Evaluation Id */
+            evaluation_id: string | null;
+            /** Evaluation Version */
+            evaluation_version: number | null;
+            /** Experiment Id */
+            experiment_id: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "prospective" | "retrospective_revised" | "synthetic_demo";
+            /** Grid Hash */
+            grid_hash: string | null;
+            /** Revision Signature */
+            revision_signature: string | null;
+            /** Cell Signature */
+            cell_signature: string | null;
+            /** Observation Signature */
+            observation_signature: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "paired" | "excluded";
+            /** Reason */
+            reason: string | null;
+            /** Reasons */
+            reasons: string[];
+            /** Reference Forecast Id */
+            reference_forecast_id: string | null;
+            /** Reference Model Id */
+            reference_model_id: string | null;
+            /** Reference Evaluation Id */
+            reference_evaluation_id: string | null;
+            /** Reference Evaluation Version */
+            reference_evaluation_version: number | null;
+            /** Reference Created At */
+            reference_created_at: string | null;
+            /** Self Reference */
+            self_reference: boolean;
+            /**
+             * Reference Rejections
+             * @description First rejected references in deterministic search order; examples only, capped at 20.
+             */
+            reference_rejections: components["schemas"]["ReferenceRejection"][];
+            /**
+             * Reference Rejection Limit
+             * @constant
+             */
+            reference_rejection_limit: 20;
+            /**
+             * Reference Rejection Count
+             * @description All rejected references examined before the selected reference, or all if none matched.
+             */
+            reference_rejection_count: number;
+            /**
+             * Reference Rejections Omitted
+             * @description Examined rejected references omitted from the bounded identity examples.
+             */
+            reference_rejections_omitted: number;
+            /**
+             * Reference Rejection Reasons
+             * @description Complete counts by reason across examined rejections; one reference can have multiple reasons.
+             */
+            reference_rejection_reasons: {
+                [key: string]: number;
+            };
+        };
+        /** PairedUncertainty */
+        PairedUncertainty: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "available" | "insufficient_data";
+            /** Reason */
+            reason: ("invalid_scores" | "invalid_windows" | "non_24h_windows" | "duplicate_windows" | "nonconsecutive_windows" | "insufficient_days") | null;
+            /** Days */
+            days: number;
+            /** Minimum Days */
+            minimum_days: number;
+            /** Block Days */
+            block_days: number;
+            /** Simulations */
+            simulations: number;
+            /** Seed */
+            seed: number;
+            /** Paired Cell Windows */
+            paired_cell_windows: number;
+            /** Mean Difference */
+            mean_difference: number | null;
+            /** Interval95 */
+            interval95: [
+                number,
+                number
+            ] | null;
+            /** Method Version */
+            method_version: string;
+            /** Estimand */
+            estimand: string;
+            /** Policy */
+            policy: string;
+        };
+        /** PooledScore */
+        PooledScore: {
+            /** N */
+            n: number;
+            /** Missing */
+            missing: number;
+            /** Positives */
+            positives: number;
+            /** Tp */
+            tp: number;
+            /** Fp */
+            fp: number;
+            /** Tn */
+            tn: number;
+            /** Fn */
+            fn: number;
+            /** Brier Sum */
+            brier_sum: number;
+            /** Log Loss Sum */
+            log_loss_sum: number;
+            /** Red Area */
+            red_area: number;
+            /** Eligible Area */
+            eligible_area: number;
+            /** Brier */
+            brier: number | null;
+            /** Log Loss */
+            log_loss: number | null;
+            /** Recall */
+            recall: number | null;
+            /** Precision */
+            precision: number | null;
+            /** False Positive Rate */
+            false_positive_rate: number | null;
+            /** Red Coverage */
+            red_coverage: number | null;
+        };
         /** PromotionRequest */
         PromotionRequest: {
             /** Model Id */
             model_id: string;
             /** Reason */
             reason: string;
+        };
+        /** ReferenceRejection */
+        ReferenceRejection: {
+            /** Forecast Id */
+            forecast_id: string;
+            /** Reasons */
+            reasons: string[];
+        };
+        /** ReportCounts */
+        ReportCounts: {
+            /** Forecast Count */
+            forecast_count: number;
+            /** Evaluation Count */
+            evaluation_count: number;
+            /** Forecast Cell Rows */
+            forecast_cell_rows: number;
+            /** Evaluation Cell Rows */
+            evaluation_cell_rows: number;
+        };
+        /** ReportExperiment */
+        ReportExperiment: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Config Hash */
+            config_hash: string;
+            /** Config */
+            config: {
+                [key: string]: components["schemas"]["JsonValue"];
+            };
+            /** Grid Id */
+            grid_id: string;
+            /** Grid Hash */
+            grid_hash: string;
+            /** Source Id */
+            source_id: string;
+            /** Source Name */
+            source_name: string;
+            /** Source Provider */
+            source_provider: string;
+            /** Synthetic */
+            synthetic: boolean;
+        };
+        /** ReportLimits */
+        ReportLimits: {
+            /** Max Span Days */
+            max_span_days: number;
+            /** Max Forecasts */
+            max_forecasts: number;
+            /** Max Cell Rows */
+            max_cell_rows: number;
+            /** Max Grid Cells */
+            max_grid_cells: number;
+        };
+        /** ReportPolicies */
+        ReportPolicies: {
+            /** Generation */
+            generation: string;
+            /** Evaluation */
+            evaluation: string;
+            /** Inclusion */
+            inclusion: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -1513,8 +1978,10 @@ export interface operations {
         parameters: {
             query: {
                 experiment_id: string;
-                mode: string;
-                days?: number;
+                mode: "prospective" | "retrospective_revised" | "synthetic_demo";
+                days?: number | null;
+                start?: string | null;
+                end?: string | null;
             };
             header?: never;
             path?: never;
@@ -1528,9 +1995,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["MetricReport"];
                 };
             };
             /** @description Validation Error */
@@ -1612,7 +2077,11 @@ export interface operations {
         parameters: {
             query: {
                 experiment_id: string;
-                mode: string;
+                mode: "prospective" | "retrospective_revised" | "synthetic_demo";
+                days?: number | null;
+                start?: string | null;
+                end?: string | null;
+                expected_report_id?: string | null;
             };
             header?: never;
             path?: never;
@@ -1626,7 +2095,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["MetricReport"];
                 };
             };
             /** @description Validation Error */
