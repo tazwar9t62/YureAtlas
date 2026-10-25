@@ -36,7 +36,7 @@ Dependencies below are in addition to the sequential merge rule. Branch names ar
 | ID | Main task | Depends on | Status | Branch | GitHub / PR |
 | --- | --- | --- | --- | --- | --- |
 | T00 | Backlog, traceability, and review guidance | — | Merged | `chore/completion-plan` | [#1](https://github.com/tazwar9t62/YureAtlas/issues/1) / [PR #4](https://github.com/tazwar9t62/YureAtlas/pull/4) |
-| T01 | Reliable isolated backend checks and CI foundation | T00 | In progress | `test/isolated-verification` | [#5](https://github.com/tazwar9t62/YureAtlas/issues/5); PR pending |
+| T01 | Reliable isolated backend checks and CI foundation | T00 | In review | `test/isolated-verification` | [#5](https://github.com/tazwar9t62/YureAtlas/issues/5) / [PR #10](https://github.com/tazwar9t62/YureAtlas/pull/10) |
 | T02 | Catalogue revisions and import coverage correctness | T01 | Planned | `fix/catalogue-reconciliation` | Not created |
 | T03 | Deterministic baseline comparisons and report scope | T02 | Planned | `fix/comparison-provenance` | Not created |
 | T04 | Prospective timing, model partitions, and scientific checks | T02, T03 | Planned | `test/scientific-invariants` | Not created |
@@ -70,7 +70,7 @@ Problem: the latest checkpoint database suite failed during setup/cleanup; test 
 | T01.1 [#6](https://github.com/tazwar9t62/YureAtlas/issues/6): environment diagnosis | Implemented in `43ca83a`: fresh isolated baseline 19 passed; [diagnosis](verification.md#2026-10-25-database-diagnosis-t011) |
 | T01.2 [#7](https://github.com/tazwar9t62/YureAtlas/issues/7): owned isolation and cleanup | Implemented in `62b815b`: 47 unit checks and all 4 PostGIS checks passed; ownership, failure and real descendant-process regressions included |
 | T01.3 [#8](https://github.com/tazwar9t62/YureAtlas/issues/8): independent verification commands | Implemented in `e9a4139`: lint, 47 unit + 4 PostGIS checks, TypeScript and read-only contracts passed; Webpack production build passed; local Turbopack worker-port restriction remains |
-| T01.4 [#9](https://github.com/tazwar9t62/YureAtlas/issues/9): isolated CI | Implemented: bounded Ubuntu/PostGIS workflow with immutable action/image pins; Actionlint passed; first PR run pending |
+| T01.4 [#9](https://github.com/tazwar9t62/YureAtlas/issues/9): isolated CI | Implemented in `21cd3d0`: bounded Ubuntu/PostGIS workflow with immutable action/image pins; Actionlint passed; first PR run pending |
 
 - **T01.1 — Diagnose the database environment.** Check the installed Docker daemon and PostGIS health, resource limits, and preserved volumes. Start the existing Docker application if needed. Use a uniquely named disposable database to reproduce setup failures; inspect server logs before changing limits. Record the cause or precise environment limitation. Preserve the primary database and artifacts.
 - **T01.2 — Harden test isolation and cleanup.** Use the running supported Python interpreter, explicit database/artifact ownership, and cleanup that preserves the original failure. Cover migration/test/cleanup failure paths. Remove only resources created by the current test run; report any remnants.
@@ -224,3 +224,5 @@ T01.2 verifies the effective database and ownership before migrations, rejects u
 T01.3 adds independent documented Make targets, supported toolchain checks, read-only OpenAPI/TypeScript drift detection, and the migration lint fix. `YUREATLAS_INTEGRATION=1 make test` correctly forced unit isolation, passed 47 unit checks and then all 4 owned PostGIS checks. Lint, TypeScript and both contract checks passed; deliberately stale temporary contracts were rejected without rewriting them, and tracked contract hashes were unchanged. The default Turbopack build remains blocked locally by an operating-system port-bind denial even with escalation; the documented Webpack production build passed compilation, types, prerendering and standalone output. T01.4 will verify the default build on GitHub's runner. Browser behavior is not claimed by these build checks.
 
 T01.4 adds PR/main CI using the same commands, a digest-pinned official PostGIS service, exact tool versions, full-commit action pins, read-only repository permissions, a 20-minute job bound, and seven-day failure logs. Unit checks use an unreachable database URL. Actionlint 1.7.12 passed. The PR's actual CI result and completed Codex review remain required before merge; this workflow does not yet run the T07 browser checks.
+
+T01 opened as [PR #10](https://github.com/tazwar9t62/YureAtlas/pull/10). Supplementary review confirmed the workflow and read-only contract behavior; a clean-checkout TypeScript simulation also passed without generated `.next` files. Overall Codex review and CI are pending; T02 has not started.
