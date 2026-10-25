@@ -73,6 +73,7 @@ class Experiment(Identity, Base):
 
 class Ingestion(Identity, Base):
     __tablename__ = "ingestion_runs"
+    __table_args__ = (Index("ingestion_source_receipt_order", "source_id", "created_at", "id"),)
     source_id: Mapped[str] = mapped_column(ForeignKey("catalogue_sources.id"), index=True)
     start: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
     end: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
@@ -152,6 +153,9 @@ class FeatureSet(Identity, Base):
 
 class Model(Identity, Base):
     __tablename__ = "model_versions"
+    __table_args__ = (
+        Index("model_selection_order", "experiment_id", "algorithm", "status", "created_at", "id"),
+    )
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiment_versions.id"), index=True)
     algorithm: Mapped[str] = mapped_column(String)
     status: Mapped[str] = mapped_column(String)
@@ -222,6 +226,16 @@ class Job(Identity, Base):
     cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     result: Mapped[dict] = mapped_column(JSONB, default=dict)
+    attempt_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    worker_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    execution: Mapped[dict | None] = mapped_column(JSONB(none_as_null=True), nullable=True)
+    __table_args__ = (
+        CheckConstraint("(attempt_token IS NULL) = (worker_token IS NULL)"),
+        CheckConstraint(
+            "execution IS NULL OR (kind = 'forecast' AND jsonb_typeof(execution) = 'object' "
+            "AND execution->>'state' IS NOT NULL AND execution->>'state' IN ('target_pinned', 'resolved'))"
+        ),
+    )
 
 
 class Promotion(Identity, Base):
@@ -229,6 +243,29 @@ class Promotion(Identity, Base):
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiment_versions.id"), index=True)
     model_id: Mapped[str] = mapped_column(ForeignKey("model_versions.id"))
     reason: Mapped[str] = mapped_column(Text)
+    __table_args__ = (Index("promotion_history_order", "experiment_id", "created_at", "id"),)
+
+
+class ScheduleConfig(Identity, Base):
+    __tablename__ = "schedule_configurations"
+    revision: Mapped[int] = mapped_column(Integer, unique=True)
+    spec: Mapped[dict] = mapped_column(JSONB)
+    reason: Mapped[str] = mapped_column(Text)
+    __table_args__ = (CheckConstraint("revision > 0"),)
+
+
+class SchedulerRuntime(Base):
+    """Last successfully committed configuration application, separate from decisions."""
+
+    __tablename__ = "scheduler_runtime"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    owner_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    effective_enabled: Mapped[bool] = mapped_column(Boolean)
+    status: Mapped[str] = mapped_column(String)
+    details: Mapped[dict] = mapped_column(JSONB, default=dict)
+    __table_args__ = (CheckConstraint("revision >= 0"),)
 
 
 class WorkerState(Base):
@@ -236,3 +273,14 @@ class WorkerState(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     heartbeat: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     details: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+
+class SchedulerState(Base):
+    """Committed scheduling decisions, independent of worker liveness."""
+
+    __tablename__ = "scheduler_state"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    reconciled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    details: Mapped[dict] = mapped_column(JSONB, default=dict)
+    __table_args__ = (CheckConstraint("reconciled_at >= observed_at"),)

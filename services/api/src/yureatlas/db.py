@@ -18,3 +18,10 @@ Session = sessionmaker(engine, expire_on_commit=False)
 def transaction():
     with Session.begin() as session:
         yield session
+        # Flush domain writes before taking the short control-row locks. The
+        # final guard holds worker then job ownership through the actual commit.
+        # Import lazily because mapped tables depend on Base from this module.
+        from .execution import verify_execution
+
+        session.flush()
+        verify_execution(session)

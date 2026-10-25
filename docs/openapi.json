@@ -33,7 +33,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Health"
+                  "$ref": "#/components/schemas/ReadinessResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service Unavailable",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadinessResponse"
                 }
               }
             }
@@ -791,9 +801,245 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "type": "object",
-                  "title": "Response Promote Model Promotions Post"
+                  "$ref": "#/components/schemas/PromotionCreated"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/experiments/{experiment_id}/promotions": {
+      "get": {
+        "summary": "Promotion History",
+        "operationId": "promotion_history_experiments__experiment_id__promotions_get",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "before",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 1024
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionHistory"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/experiments/{experiment_id}/model-selection": {
+      "get": {
+        "summary": "Current Model Selection",
+        "operationId": "current_model_selection_experiments__experiment_id__model_selection_get",
+        "parameters": [
+          {
+            "name": "experiment_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Experiment Id"
+            }
+          },
+          {
+            "name": "start",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CurrentModelSelection"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/schedules": {
+      "get": {
+        "summary": "Schedule Status",
+        "operationId": "schedule_status_schedules_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleStatus"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Configure Schedule",
+        "operationId": "configure_schedule_schedules_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScheduleUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleRevision"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/schedules/history": {
+      "get": {
+        "summary": "Schedule History",
+        "operationId": "schedule_history_schedules_history_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 25,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "before_revision",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Before Revision"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScheduleHistory"
                 }
               }
             }
@@ -1394,6 +1640,95 @@
         ],
         "title": "CalibrationBin"
       },
+      "CurrentModelSelection": {
+        "properties": {
+          "experiment_id": {
+            "type": "string",
+            "title": "Experiment Id"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "input_cutoff": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Input Cutoff"
+          },
+          "policy": {
+            "type": "string",
+            "title": "Policy"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "promotion",
+              "historical_rate",
+              "unavailable"
+            ],
+            "title": "Kind"
+          },
+          "reason_code": {
+            "type": "string",
+            "enum": [
+              "latest_promotion",
+              "historical_rate_fallback",
+              "selection_unavailable"
+            ],
+            "title": "Reason Code"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PromotionModel"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "promotion": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PromotionRecord"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "experiment_id",
+          "checked_at",
+          "start",
+          "end",
+          "input_cutoff",
+          "policy",
+          "kind",
+          "reason_code",
+          "reason",
+          "model",
+          "promotion"
+        ],
+        "title": "CurrentModelSelection"
+      },
       "EvaluatedScore": {
         "properties": {
           "n": {
@@ -1642,6 +1977,37 @@
         ],
         "title": "EvaluationView"
       },
+      "ExperimentPrerequisites": {
+        "properties": {
+          "experiment_id": {
+            "type": "string",
+            "title": "Experiment Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "attention_needed": {
+            "type": "boolean",
+            "title": "Attention Needed"
+          },
+          "source": {
+            "$ref": "#/components/schemas/SourcePrerequisite"
+          },
+          "model": {
+            "$ref": "#/components/schemas/ModelPrerequisite"
+          }
+        },
+        "type": "object",
+        "required": [
+          "experiment_id",
+          "name",
+          "attention_needed",
+          "source",
+          "model"
+        ],
+        "title": "ExperimentPrerequisites"
+      },
       "ExperimentSpec": {
         "properties": {
           "name": {
@@ -1818,6 +2184,161 @@
           "config"
         ],
         "title": "ExperimentView"
+      },
+      "ForecastSelection": {
+        "properties": {
+          "policy": {
+            "type": "string",
+            "const": "forecast-selection-v1",
+            "title": "Policy"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "requested",
+              "promotion",
+              "historical_rate"
+            ],
+            "title": "Kind"
+          },
+          "selected_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Selected At"
+          },
+          "promotion_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promotion Id"
+          },
+          "promotion_created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promotion Created At"
+          },
+          "promotion_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promotion Reason"
+          },
+          "model_artifact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Artifact"
+          },
+          "model_training_cutoff": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Model Training Cutoff"
+          },
+          "model_available_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Model Available At"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "policy",
+          "kind",
+          "selected_at",
+          "promotion_id",
+          "promotion_created_at",
+          "promotion_reason",
+          "model_artifact",
+          "model_training_cutoff",
+          "model_available_at"
+        ],
+        "title": "ForecastSelection"
+      },
+      "ForecastTarget": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version"
+          },
+          "state": {
+            "type": "string",
+            "const": "target_pinned",
+            "title": "State"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "input_cutoff": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Input Cutoff"
+          },
+          "mode": {
+            "type": "string",
+            "const": "prospective",
+            "title": "Mode"
+          },
+          "target_basis": {
+            "type": "string",
+            "enum": [
+              "explicit_start",
+              "request_time",
+              "legacy_explicit_start",
+              "legacy_request_time",
+              "inline_request_time"
+            ],
+            "title": "Target Basis"
+          },
+          "request_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Request Time"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "state",
+          "start",
+          "end",
+          "input_cutoff",
+          "mode",
+          "target_basis",
+          "request_time"
+        ],
+        "title": "ForecastTarget"
       },
       "ForecastView": {
         "properties": {
@@ -2053,6 +2574,36 @@
           "cancel_requested": {
             "type": "boolean",
             "title": "Cancel Requested"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "execution": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/ForecastTarget"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ResolvedForecastExecution"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "state",
+                  "mapping": {
+                    "resolved": "#/components/schemas/ResolvedForecastExecution",
+                    "target_pinned": "#/components/schemas/ForecastTarget"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Execution"
           }
         },
         "type": "object",
@@ -2629,6 +3180,105 @@
         ],
         "title": "ModelComparison"
       },
+      "ModelPrerequisite": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "metadata_available",
+              "unavailable"
+            ],
+            "title": "Status"
+          },
+          "policy": {
+            "type": "string",
+            "title": "Policy",
+            "default": "forecast-selection-v1"
+          },
+          "kind": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "promotion",
+                  "historical_rate"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Kind"
+          },
+          "model_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model Id"
+          },
+          "algorithm": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Algorithm"
+          },
+          "training_cutoff": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Training Cutoff"
+          },
+          "available_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Available At"
+          },
+          "promotion_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Promotion Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "message"
+        ],
+        "title": "ModelPrerequisite"
+      },
       "ModelView": {
         "properties": {
           "id": {
@@ -2686,6 +3336,49 @@
           "metadata"
         ],
         "title": "ModelView"
+      },
+      "NextScheduleRun": {
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "ingest",
+              "forecast",
+              "evaluate",
+              "reconcile",
+              "train"
+            ],
+            "title": "Kind"
+          },
+          "at_utc": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At Utc"
+          },
+          "at_jst": {
+            "type": "string",
+            "title": "At Jst"
+          },
+          "forecast_target_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecast Target Start"
+          }
+        },
+        "type": "object",
+        "required": [
+          "kind",
+          "at_utc",
+          "at_jst"
+        ],
+        "title": "NextScheduleRun"
       },
       "PairDecision": {
         "properties": {
@@ -3189,10 +3882,279 @@
         ],
         "title": "PooledScore"
       },
+      "PrerequisiteReceipt": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Received At"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "coverage_effect": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coverage Effect"
+          },
+          "feed": {
+            "type": "boolean",
+            "title": "Feed",
+            "default": false
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "received_at",
+          "start",
+          "end",
+          "status"
+        ],
+        "title": "PrerequisiteReceipt"
+      },
+      "PromotionCreated": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "experiment_id": {
+            "type": "string",
+            "title": "Experiment Id"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "affects": {
+            "type": "string",
+            "const": "future forecasts only",
+            "title": "Affects",
+            "default": "future forecasts only"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "experiment_id",
+          "model_id",
+          "created_at",
+          "reason"
+        ],
+        "title": "PromotionCreated"
+      },
+      "PromotionHistory": {
+        "properties": {
+          "experiment_id": {
+            "type": "string",
+            "title": "Experiment Id"
+          },
+          "limit": {
+            "type": "integer",
+            "maximum": 100.0,
+            "minimum": 1.0,
+            "title": "Limit"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PromotionHistoryItem"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          },
+          "next_cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Cursor"
+          }
+        },
+        "type": "object",
+        "required": [
+          "experiment_id",
+          "limit",
+          "items",
+          "has_more",
+          "next_cursor"
+        ],
+        "title": "PromotionHistory"
+      },
+      "PromotionHistoryItem": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "experiment_id": {
+            "type": "string",
+            "title": "Experiment Id"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          },
+          "model": {
+            "$ref": "#/components/schemas/PromotionModel"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "experiment_id",
+          "model_id",
+          "created_at",
+          "reason",
+          "model"
+        ],
+        "title": "PromotionHistoryItem"
+      },
+      "PromotionModel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "experiment_id": {
+            "type": "string",
+            "title": "Experiment Id"
+          },
+          "algorithm": {
+            "type": "string",
+            "title": "Algorithm"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "training_cutoff": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Training Cutoff"
+          },
+          "available_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Available At"
+          },
+          "artifact": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Artifact"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "experiment_id",
+          "algorithm",
+          "status",
+          "created_at",
+          "training_cutoff",
+          "available_at",
+          "artifact"
+        ],
+        "title": "PromotionModel"
+      },
+      "PromotionRecord": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "experiment_id": {
+            "type": "string",
+            "title": "Experiment Id"
+          },
+          "model_id": {
+            "type": "string",
+            "title": "Model Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "experiment_id",
+          "model_id",
+          "created_at",
+          "reason"
+        ],
+        "title": "PromotionRecord"
+      },
       "PromotionRequest": {
         "properties": {
           "model_id": {
             "type": "string",
+            "maxLength": 128,
+            "minLength": 1,
             "title": "Model Id"
           },
           "reason": {
@@ -3202,12 +4164,258 @@
             "title": "Reason"
           }
         },
+        "additionalProperties": false,
         "type": "object",
         "required": [
           "model_id",
           "reason"
         ],
         "title": "PromotionRequest"
+      },
+      "ReadinessCheck": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "failed",
+              "skipped"
+            ],
+            "title": "Status"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "title": "ReadinessCheck"
+      },
+      "ReadinessChecks": {
+        "properties": {
+          "database": {
+            "$ref": "#/components/schemas/ReadinessCheck"
+          },
+          "schema": {
+            "$ref": "#/components/schemas/SchemaCheck"
+          },
+          "artifacts": {
+            "$ref": "#/components/schemas/ReadinessCheck"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/WorkerCheck"
+          },
+          "scheduler": {
+            "$ref": "#/components/schemas/SchedulerCheck"
+          }
+        },
+        "type": "object",
+        "required": [
+          "database",
+          "schema",
+          "artifacts",
+          "worker",
+          "scheduler"
+        ],
+        "title": "ReadinessChecks"
+      },
+      "ReadinessPrerequisites": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "unavailable",
+              "unknown",
+              "first_run",
+              "real_setup_needed",
+              "empty_scope",
+              "needs_attention",
+              "metadata_available",
+              "sampled"
+            ],
+            "title": "Status"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "advisory": {
+            "type": "boolean",
+            "const": true,
+            "title": "Advisory",
+            "default": true
+          },
+          "caveat": {
+            "type": "string",
+            "title": "Caveat",
+            "default": "Advisory metadata only. The latest receipt does not establish completeness of any required interval, and model metadata does not verify artifact integrity, source freshness, or predictive readiness. Forecast execution performs its own checks."
+          },
+          "checked_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Checked At"
+          },
+          "schedule_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schedule Revision"
+          },
+          "scope": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "all_real",
+                  "selected"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope"
+          },
+          "selected_experiment_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Selected Experiment Ids"
+          },
+          "inspection_limit": {
+            "type": "integer",
+            "const": 20,
+            "title": "Inspection Limit",
+            "default": 20
+          },
+          "inspected_count": {
+            "type": "integer",
+            "maximum": 20.0,
+            "minimum": 0.0,
+            "title": "Inspected Count",
+            "default": 0
+          },
+          "has_more": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Has More"
+          },
+          "scope_complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scope Complete"
+          },
+          "selection_start": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selection Start"
+          },
+          "selection_input_cutoff": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selection Input Cutoff"
+          },
+          "experiments": {
+            "items": {
+              "$ref": "#/components/schemas/ExperimentPrerequisites"
+            },
+            "type": "array",
+            "maxItems": 20,
+            "title": "Experiments"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "message"
+        ],
+        "title": "ReadinessPrerequisites"
+      },
+      "ReadinessResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ready",
+              "not_ready"
+            ],
+            "title": "Status"
+          },
+          "service": {
+            "type": "string",
+            "const": "YureAtlas",
+            "title": "Service",
+            "default": "YureAtlas"
+          },
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At"
+          },
+          "checks": {
+            "$ref": "#/components/schemas/ReadinessChecks"
+          },
+          "prerequisites": {
+            "$ref": "#/components/schemas/ReadinessPrerequisites"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "checked_at",
+          "checks",
+          "prerequisites"
+        ],
+        "title": "ReadinessResponse"
       },
       "ReferenceRejection": {
         "properties": {
@@ -3370,6 +4578,656 @@
         ],
         "title": "ReportPolicies"
       },
+      "ResolvedForecastExecution": {
+        "properties": {
+          "version": {
+            "type": "integer",
+            "const": 1,
+            "title": "Version"
+          },
+          "state": {
+            "type": "string",
+            "const": "resolved",
+            "title": "State"
+          },
+          "start": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Start"
+          },
+          "end": {
+            "type": "string",
+            "format": "date-time",
+            "title": "End"
+          },
+          "input_cutoff": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Input Cutoff"
+          },
+          "mode": {
+            "type": "string",
+            "const": "prospective",
+            "title": "Mode"
+          },
+          "target_basis": {
+            "type": "string",
+            "enum": [
+              "explicit_start",
+              "request_time",
+              "legacy_explicit_start",
+              "legacy_request_time",
+              "inline_request_time"
+            ],
+            "title": "Target Basis"
+          },
+          "request_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Request Time"
+          },
+          "experiment_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Experiment Id"
+          },
+          "model_id": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Model Id"
+          },
+          "forecast_key": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$",
+            "title": "Forecast Key"
+          },
+          "selection": {
+            "$ref": "#/components/schemas/ForecastSelection"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "version",
+          "state",
+          "start",
+          "end",
+          "input_cutoff",
+          "mode",
+          "target_basis",
+          "request_time",
+          "experiment_id",
+          "model_id",
+          "forecast_key",
+          "selection"
+        ],
+        "title": "ResolvedForecastExecution"
+      },
+      "ScheduleApplication": {
+        "properties": {
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "observed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Observed At"
+          },
+          "owner_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Token"
+          },
+          "effective_enabled": {
+            "type": "boolean",
+            "title": "Effective Enabled"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "applied",
+              "disabled"
+            ],
+            "title": "Status"
+          },
+          "details": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Details"
+          }
+        },
+        "type": "object",
+        "required": [
+          "revision",
+          "observed_at",
+          "owner_token",
+          "effective_enabled",
+          "status",
+          "details"
+        ],
+        "title": "ScheduleApplication"
+      },
+      "ScheduleHistory": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ScheduleRevision"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More"
+          },
+          "next_before_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Before Revision"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "has_more",
+          "next_before_revision"
+        ],
+        "title": "ScheduleHistory"
+      },
+      "ScheduleRecovery": {
+        "properties": {
+          "next_check_estimate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Check Estimate",
+            "description": "Estimated next reconciliation within one 30-second cadence; not an issuance promise"
+          },
+          "eligible_forecast_target": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eligible Forecast Target"
+          },
+          "policy": {
+            "type": "string",
+            "title": "Policy"
+          }
+        },
+        "type": "object",
+        "required": [
+          "next_check_estimate",
+          "eligible_forecast_target",
+          "policy"
+        ],
+        "title": "ScheduleRecovery"
+      },
+      "ScheduleRevision": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "revision": {
+            "type": "integer",
+            "title": "Revision"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/ScheduleSpec"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "revision",
+          "created_at",
+          "spec",
+          "reason"
+        ],
+        "title": "ScheduleRevision"
+      },
+      "ScheduleSpec": {
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "title": "Enabled",
+            "default": true
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "all_real",
+              "selected"
+            ],
+            "title": "Scope",
+            "default": "all_real"
+          },
+          "experiment_ids": {
+            "items": {
+              "type": "string",
+              "maxLength": 128,
+              "minLength": 1
+            },
+            "type": "array",
+            "maxItems": 100,
+            "title": "Experiment Ids"
+          },
+          "kinds": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "ingest",
+                "forecast",
+                "evaluate",
+                "reconcile",
+                "train"
+              ]
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Kinds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ScheduleSpec"
+      },
+      "ScheduleStatus": {
+        "properties": {
+          "checked_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Checked At"
+          },
+          "timezone": {
+            "type": "string",
+            "const": "Asia/Tokyo",
+            "title": "Timezone",
+            "default": "Asia/Tokyo"
+          },
+          "requested": {
+            "$ref": "#/components/schemas/ScheduleRevision"
+          },
+          "api_environment_enabled": {
+            "type": "boolean",
+            "title": "Api Environment Enabled"
+          },
+          "worker": {
+            "$ref": "#/components/schemas/ScheduleWorker"
+          },
+          "effective_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Enabled"
+          },
+          "effective_reason": {
+            "type": "string",
+            "title": "Effective Reason"
+          },
+          "application_status": {
+            "type": "string",
+            "enum": [
+              "current",
+              "pending",
+              "worker_unverified",
+              "environment_disabled"
+            ],
+            "title": "Application Status"
+          },
+          "last_application": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleApplication"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "scope_count": {
+            "type": "integer",
+            "title": "Scope Count"
+          },
+          "scope_complete": {
+            "type": "boolean",
+            "title": "Scope Complete"
+          },
+          "applicable_kinds": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "ingest",
+                "forecast",
+                "evaluate",
+                "reconcile",
+                "train"
+              ]
+            },
+            "type": "array",
+            "title": "Applicable Kinds"
+          },
+          "next_regular_runs": {
+            "items": {
+              "$ref": "#/components/schemas/NextScheduleRun"
+            },
+            "type": "array",
+            "title": "Next Regular Runs"
+          },
+          "recovery": {
+            "$ref": "#/components/schemas/ScheduleRecovery"
+          }
+        },
+        "type": "object",
+        "required": [
+          "checked_at",
+          "requested",
+          "api_environment_enabled",
+          "worker",
+          "effective_enabled",
+          "effective_reason",
+          "application_status",
+          "last_application",
+          "scope_count",
+          "scope_complete",
+          "applicable_kinds",
+          "next_regular_runs",
+          "recovery"
+        ],
+        "title": "ScheduleStatus"
+      },
+      "ScheduleUpdate": {
+        "properties": {
+          "expected_revision": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Expected Revision"
+          },
+          "spec": {
+            "$ref": "#/components/schemas/ScheduleSpec"
+          },
+          "reason": {
+            "type": "string",
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_revision",
+          "spec",
+          "reason"
+        ],
+        "title": "ScheduleUpdate"
+      },
+      "ScheduleWorker": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "missing",
+              "unregistered",
+              "offline",
+              "stale",
+              "clock_skew",
+              "fresh"
+            ],
+            "title": "Status"
+          },
+          "heartbeat": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Heartbeat"
+          },
+          "owner_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Owner Token"
+          },
+          "environment_enabled": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Environment Enabled"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "heartbeat",
+          "owner_token",
+          "environment_enabled",
+          "reason"
+        ],
+        "title": "ScheduleWorker"
+      },
+      "SchedulerCheck": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "failed",
+              "skipped"
+            ],
+            "title": "Status"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revision"
+          },
+          "applied_revision": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Applied Revision"
+          },
+          "observed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "title": "SchedulerCheck"
+      },
+      "SchemaCheck": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "failed",
+              "skipped"
+            ],
+            "title": "Status"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "expected": {
+            "type": "string",
+            "title": "Expected"
+          },
+          "observed": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Observed"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "code",
+          "message",
+          "expected"
+        ],
+        "title": "SchemaCheck"
+      },
+      "SourcePrerequisite": {
+        "properties": {
+          "source_id": {
+            "type": "string",
+            "title": "Source Id"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "no_receipt",
+              "receipt_observed"
+            ],
+            "title": "Status"
+          },
+          "latest_receipt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PrerequisiteReceipt"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "coverage_verified": {
+            "type": "boolean",
+            "const": false,
+            "title": "Coverage Verified",
+            "default": false
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "source_id",
+          "provider",
+          "status",
+          "message"
+        ],
+        "title": "SourcePrerequisite"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -3409,6 +5267,44 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "WorkerCheck": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "failed",
+              "skipped"
+            ],
+            "title": "Status"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "worker": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ScheduleWorker"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "code",
+          "message"
+        ],
+        "title": "WorkerCheck"
       }
     }
   }

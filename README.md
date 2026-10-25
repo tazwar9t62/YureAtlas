@@ -34,3 +34,5 @@ Some restricted macOS execution environments deny Turbopack's local PostCSS work
 ## Research protocol and evidence
 
 The [experiment protocol](docs/experiment-protocol.md) defines receipt cutoffs, publication deadlines, chronological partitions and report semantics. [Model notes](docs/model-notes.md) describe actual fitting/selection/calibration roles and saved metadata. [ETAS numerical verification](docs/etas-validation.md) gives independent fixtures, reproduction commands, tolerances and the external implementation assessment. The [dated verification record](docs/verification.md) distinguishes completed software checks from remaining operational acceptance and external scientific validation. Synthetic or numerical test results do not establish predictive skill.
+
+The [scheduling policy](docs/scheduling.md) documents JST run times, bounded recovery after sleep or restart, missed forecast decisions, and disabled scheduling.

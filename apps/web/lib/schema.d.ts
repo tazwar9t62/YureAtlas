@@ -329,6 +329,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/experiments/{experiment_id}/promotions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Promotion History */
+        get: operations["promotion_history_experiments__experiment_id__promotions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/experiments/{experiment_id}/model-selection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Current Model Selection */
+        get: operations["current_model_selection_experiments__experiment_id__model_selection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/schedules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Schedule Status */
+        get: operations["schedule_status_schedules_get"];
+        /** Configure Schedule */
+        put: operations["configure_schedule_schedules_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/schedules/history": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Schedule History */
+        get: operations["schedule_history_schedules_history_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/sources": {
         parameters: {
             query?: never;
@@ -498,6 +567,47 @@ export interface components {
             /** Observed */
             observed: number | null;
         };
+        /** CurrentModelSelection */
+        CurrentModelSelection: {
+            /** Experiment Id */
+            experiment_id: string;
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Input Cutoff
+             * Format: date-time
+             */
+            input_cutoff: string;
+            /** Policy */
+            policy: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "promotion" | "historical_rate" | "unavailable";
+            /**
+             * Reason Code
+             * @enum {string}
+             */
+            reason_code: "latest_promotion" | "historical_rate_fallback" | "selection_unavailable";
+            /** Reason */
+            reason: string;
+            model: components["schemas"]["PromotionModel"] | null;
+            promotion: components["schemas"]["PromotionRecord"] | null;
+        };
         /** EvaluatedScore */
         EvaluatedScore: {
             /** N */
@@ -565,6 +675,17 @@ export interface components {
             metrics: {
                 [key: string]: unknown;
             };
+        };
+        /** ExperimentPrerequisites */
+        ExperimentPrerequisites: {
+            /** Experiment Id */
+            experiment_id: string;
+            /** Name */
+            name: string;
+            /** Attention Needed */
+            attention_needed: boolean;
+            source: components["schemas"]["SourcePrerequisite"];
+            model: components["schemas"]["ModelPrerequisite"];
         };
         /** ExperimentSpec */
         ExperimentSpec: {
@@ -671,6 +792,85 @@ export interface components {
             config: {
                 [key: string]: unknown;
             };
+        };
+        /** ForecastSelection */
+        ForecastSelection: {
+            /**
+             * Policy
+             * @constant
+             */
+            policy: "forecast-selection-v1";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "requested" | "promotion" | "historical_rate";
+            /**
+             * Selected At
+             * Format: date-time
+             */
+            selected_at: string;
+            /** Promotion Id */
+            promotion_id: string | null;
+            /** Promotion Created At */
+            promotion_created_at: string | null;
+            /** Promotion Reason */
+            promotion_reason: string | null;
+            /** Model Artifact */
+            model_artifact: string | null;
+            /**
+             * Model Training Cutoff
+             * Format: date-time
+             */
+            model_training_cutoff: string;
+            /**
+             * Model Available At
+             * Format: date-time
+             */
+            model_available_at: string;
+        };
+        /** ForecastTarget */
+        ForecastTarget: {
+            /**
+             * Version
+             * @constant
+             */
+            version: 1;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "target_pinned";
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Input Cutoff
+             * Format: date-time
+             */
+            input_cutoff: string;
+            /**
+             * Mode
+             * @constant
+             */
+            mode: "prospective";
+            /**
+             * Target Basis
+             * @enum {string}
+             */
+            target_basis: "explicit_start" | "request_time" | "legacy_explicit_start" | "legacy_request_time" | "inline_request_time";
+            /**
+             * Request Time
+             * Format: date-time
+             */
+            request_time: string;
         };
         /** ForecastView */
         ForecastView: {
@@ -790,6 +990,12 @@ export interface components {
             created_at: string;
             /** Cancel Requested */
             cancel_requested: boolean;
+            /** Payload */
+            payload?: {
+                [key: string]: unknown;
+            };
+            /** Execution */
+            execution?: (components["schemas"]["ForecastTarget"] | components["schemas"]["ResolvedForecastExecution"]) | null;
         };
         JsonValue: unknown;
         /** MetricReport */
@@ -975,6 +1181,33 @@ export interface components {
             /** Decisions */
             decisions: components["schemas"]["PairDecision"][];
         };
+        /** ModelPrerequisite */
+        ModelPrerequisite: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "metadata_available" | "unavailable";
+            /**
+             * Policy
+             * @default forecast-selection-v1
+             */
+            policy: string;
+            /** Kind */
+            kind?: ("promotion" | "historical_rate") | null;
+            /** Model Id */
+            model_id?: string | null;
+            /** Algorithm */
+            algorithm?: string | null;
+            /** Training Cutoff */
+            training_cutoff?: string | null;
+            /** Available At */
+            available_at?: string | null;
+            /** Promotion Id */
+            promotion_id?: string | null;
+            /** Message */
+            message: string;
+        };
         /** ModelView */
         ModelView: {
             /** Id */
@@ -1001,6 +1234,23 @@ export interface components {
             metadata: {
                 [key: string]: unknown;
             };
+        };
+        /** NextScheduleRun */
+        NextScheduleRun: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "ingest" | "forecast" | "evaluate" | "reconcile" | "train";
+            /**
+             * At Utc
+             * Format: date-time
+             */
+            at_utc: string;
+            /** At Jst */
+            at_jst: string;
+            /** Forecast Target Start */
+            forecast_target_start?: string | null;
         };
         /** PairDecision */
         PairDecision: {
@@ -1158,12 +1408,228 @@ export interface components {
             /** Red Coverage */
             red_coverage: number | null;
         };
+        /** PrerequisiteReceipt */
+        PrerequisiteReceipt: {
+            /** Id */
+            id: string;
+            /**
+             * Received At
+             * Format: date-time
+             */
+            received_at: string;
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /** Status */
+            status: string;
+            /** Coverage Effect */
+            coverage_effect?: string | null;
+            /**
+             * Feed
+             * @default false
+             */
+            feed: boolean;
+        };
+        /** PromotionCreated */
+        PromotionCreated: {
+            /** Id */
+            id: string;
+            /** Experiment Id */
+            experiment_id: string;
+            /** Model Id */
+            model_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Reason */
+            reason: string;
+            /**
+             * Affects
+             * @default future forecasts only
+             * @constant
+             */
+            affects: "future forecasts only";
+        };
+        /** PromotionHistory */
+        PromotionHistory: {
+            /** Experiment Id */
+            experiment_id: string;
+            /** Limit */
+            limit: number;
+            /** Items */
+            items: components["schemas"]["PromotionHistoryItem"][];
+            /** Has More */
+            has_more: boolean;
+            /** Next Cursor */
+            next_cursor: string | null;
+        };
+        /** PromotionHistoryItem */
+        PromotionHistoryItem: {
+            /** Id */
+            id: string;
+            /** Experiment Id */
+            experiment_id: string;
+            /** Model Id */
+            model_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Reason */
+            reason: string;
+            model: components["schemas"]["PromotionModel"];
+        };
+        /** PromotionModel */
+        PromotionModel: {
+            /** Id */
+            id: string;
+            /** Experiment Id */
+            experiment_id: string;
+            /** Algorithm */
+            algorithm: string;
+            /** Status */
+            status: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Training Cutoff
+             * Format: date-time
+             */
+            training_cutoff: string;
+            /**
+             * Available At
+             * Format: date-time
+             */
+            available_at: string;
+            /** Artifact */
+            artifact: string | null;
+        };
+        /** PromotionRecord */
+        PromotionRecord: {
+            /** Id */
+            id: string;
+            /** Experiment Id */
+            experiment_id: string;
+            /** Model Id */
+            model_id: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Reason */
+            reason: string;
+        };
         /** PromotionRequest */
         PromotionRequest: {
             /** Model Id */
             model_id: string;
             /** Reason */
             reason: string;
+        };
+        /** ReadinessCheck */
+        ReadinessCheck: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "skipped";
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+        };
+        /** ReadinessChecks */
+        ReadinessChecks: {
+            database: components["schemas"]["ReadinessCheck"];
+            schema: components["schemas"]["SchemaCheck"];
+            artifacts: components["schemas"]["ReadinessCheck"];
+            worker: components["schemas"]["WorkerCheck"];
+            scheduler: components["schemas"]["SchedulerCheck"];
+        };
+        /** ReadinessPrerequisites */
+        ReadinessPrerequisites: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "unavailable" | "unknown" | "first_run" | "real_setup_needed" | "empty_scope" | "needs_attention" | "metadata_available" | "sampled";
+            /** Message */
+            message: string;
+            /**
+             * Advisory
+             * @default true
+             * @constant
+             */
+            advisory: true;
+            /**
+             * Caveat
+             * @default Advisory metadata only. The latest receipt does not establish completeness of any required interval, and model metadata does not verify artifact integrity, source freshness, or predictive readiness. Forecast execution performs its own checks.
+             */
+            caveat: string;
+            /** Checked At */
+            checked_at?: string | null;
+            /** Schedule Revision */
+            schedule_revision?: number | null;
+            /** Scope */
+            scope?: ("all_real" | "selected") | null;
+            /** Selected Experiment Ids */
+            selected_experiment_ids?: string[];
+            /**
+             * Inspection Limit
+             * @default 20
+             * @constant
+             */
+            inspection_limit: 20;
+            /**
+             * Inspected Count
+             * @default 0
+             */
+            inspected_count: number;
+            /** Has More */
+            has_more?: boolean | null;
+            /** Scope Complete */
+            scope_complete?: boolean | null;
+            /** Selection Start */
+            selection_start?: string | null;
+            /** Selection Input Cutoff */
+            selection_input_cutoff?: string | null;
+            /** Experiments */
+            experiments?: components["schemas"]["ExperimentPrerequisites"][];
+        };
+        /** ReadinessResponse */
+        ReadinessResponse: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ready" | "not_ready";
+            /**
+             * Service
+             * @default YureAtlas
+             * @constant
+             */
+            service: "YureAtlas";
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            checks: components["schemas"]["ReadinessChecks"];
+            prerequisites: components["schemas"]["ReadinessPrerequisites"];
         };
         /** ReferenceRejection */
         ReferenceRejection: {
@@ -1228,6 +1694,246 @@ export interface components {
             /** Inclusion */
             inclusion: string;
         };
+        /** ResolvedForecastExecution */
+        ResolvedForecastExecution: {
+            /**
+             * Version
+             * @constant
+             */
+            version: 1;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            state: "resolved";
+            /**
+             * Start
+             * Format: date-time
+             */
+            start: string;
+            /**
+             * End
+             * Format: date-time
+             */
+            end: string;
+            /**
+             * Input Cutoff
+             * Format: date-time
+             */
+            input_cutoff: string;
+            /**
+             * Mode
+             * @constant
+             */
+            mode: "prospective";
+            /**
+             * Target Basis
+             * @enum {string}
+             */
+            target_basis: "explicit_start" | "request_time" | "legacy_explicit_start" | "legacy_request_time" | "inline_request_time";
+            /**
+             * Request Time
+             * Format: date-time
+             */
+            request_time: string;
+            /** Experiment Id */
+            experiment_id: string;
+            /** Model Id */
+            model_id: string;
+            /** Forecast Key */
+            forecast_key: string;
+            selection: components["schemas"]["ForecastSelection"];
+        };
+        /** ScheduleApplication */
+        ScheduleApplication: {
+            /** Revision */
+            revision: number;
+            /**
+             * Observed At
+             * Format: date-time
+             */
+            observed_at: string;
+            /** Owner Token */
+            owner_token: string | null;
+            /** Effective Enabled */
+            effective_enabled: boolean;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "applied" | "disabled";
+            /** Details */
+            details: {
+                [key: string]: unknown;
+            };
+        };
+        /** ScheduleHistory */
+        ScheduleHistory: {
+            /** Items */
+            items: components["schemas"]["ScheduleRevision"][];
+            /** Has More */
+            has_more: boolean;
+            /** Next Before Revision */
+            next_before_revision: number | null;
+        };
+        /** ScheduleRecovery */
+        ScheduleRecovery: {
+            /**
+             * Next Check Estimate
+             * @description Estimated next reconciliation within one 30-second cadence; not an issuance promise
+             */
+            next_check_estimate: string | null;
+            /** Eligible Forecast Target */
+            eligible_forecast_target: string | null;
+            /** Policy */
+            policy: string;
+        };
+        /** ScheduleRevision */
+        ScheduleRevision: {
+            /** Id */
+            id: string | null;
+            /** Revision */
+            revision: number;
+            /** Created At */
+            created_at: string | null;
+            spec: components["schemas"]["ScheduleSpec"];
+            /** Reason */
+            reason: string;
+        };
+        /** ScheduleSpec */
+        ScheduleSpec: {
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /**
+             * Scope
+             * @default all_real
+             * @enum {string}
+             */
+            scope: "all_real" | "selected";
+            /** Experiment Ids */
+            experiment_ids?: string[];
+            /** Kinds */
+            kinds?: ("ingest" | "forecast" | "evaluate" | "reconcile" | "train")[];
+        };
+        /** ScheduleStatus */
+        ScheduleStatus: {
+            /**
+             * Checked At
+             * Format: date-time
+             */
+            checked_at: string;
+            /**
+             * Timezone
+             * @default Asia/Tokyo
+             * @constant
+             */
+            timezone: "Asia/Tokyo";
+            requested: components["schemas"]["ScheduleRevision"];
+            /** Api Environment Enabled */
+            api_environment_enabled: boolean;
+            worker: components["schemas"]["ScheduleWorker"];
+            /** Effective Enabled */
+            effective_enabled: boolean | null;
+            /** Effective Reason */
+            effective_reason: string;
+            /**
+             * Application Status
+             * @enum {string}
+             */
+            application_status: "current" | "pending" | "worker_unverified" | "environment_disabled";
+            last_application: components["schemas"]["ScheduleApplication"] | null;
+            /** Scope Count */
+            scope_count: number;
+            /** Scope Complete */
+            scope_complete: boolean;
+            /** Applicable Kinds */
+            applicable_kinds: ("ingest" | "forecast" | "evaluate" | "reconcile" | "train")[];
+            /** Next Regular Runs */
+            next_regular_runs: components["schemas"]["NextScheduleRun"][];
+            recovery: components["schemas"]["ScheduleRecovery"];
+        };
+        /** ScheduleUpdate */
+        ScheduleUpdate: {
+            /** Expected Revision */
+            expected_revision: number;
+            spec: components["schemas"]["ScheduleSpec"];
+            /** Reason */
+            reason: string;
+        };
+        /** ScheduleWorker */
+        ScheduleWorker: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "missing" | "unregistered" | "offline" | "stale" | "clock_skew" | "fresh";
+            /** Heartbeat */
+            heartbeat: string | null;
+            /** Owner Token */
+            owner_token: string | null;
+            /** Environment Enabled */
+            environment_enabled: boolean | null;
+            /** Reason */
+            reason: string;
+        };
+        /** SchedulerCheck */
+        SchedulerCheck: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "skipped";
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Revision */
+            revision?: number | null;
+            /** Applied Revision */
+            applied_revision?: number | null;
+            /** Observed At */
+            observed_at?: string | null;
+        };
+        /** SchemaCheck */
+        SchemaCheck: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "skipped";
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            /** Expected */
+            expected: string;
+            /** Observed */
+            observed?: string[];
+        };
+        /** SourcePrerequisite */
+        SourcePrerequisite: {
+            /** Source Id */
+            source_id: string;
+            /** Provider */
+            provider: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "no_receipt" | "receipt_observed";
+            latest_receipt?: components["schemas"]["PrerequisiteReceipt"] | null;
+            /**
+             * Coverage Verified
+             * @default false
+             * @constant
+             */
+            coverage_verified: false;
+            /** Message */
+            message: string;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1240,6 +1946,19 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /** WorkerCheck */
+        WorkerCheck: {
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "ok" | "failed" | "skipped";
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
+            worker?: components["schemas"]["ScheduleWorker"] | null;
         };
     };
     responses: never;
@@ -1285,7 +2004,16 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Health"];
+                    "application/json": components["schemas"]["ReadinessResponse"];
+                };
+            };
+            /** @description Service Unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReadinessResponse"];
                 };
             };
         };
@@ -1865,9 +2593,159 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["PromotionCreated"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    promotion_history_experiments__experiment_id__promotions_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                before?: string | null;
+            };
+            header?: never;
+            path: {
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PromotionHistory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    current_model_selection_experiments__experiment_id__model_selection_get: {
+        parameters: {
+            query?: {
+                start?: string | null;
+            };
+            header?: never;
+            path: {
+                experiment_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurrentModelSelection"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    schedule_status_schedules_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleStatus"];
+                };
+            };
+        };
+    };
+    configure_schedule_schedules_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScheduleUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleRevision"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    schedule_history_schedules_history_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                before_revision?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScheduleHistory"];
                 };
             };
             /** @description Validation Error */

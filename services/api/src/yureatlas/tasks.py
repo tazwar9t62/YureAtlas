@@ -8,7 +8,7 @@ from .db import transaction
 from .demo import DEMO_TEST_START, seed_catalogue
 from .ingestion import ingest_usgs, real_experiment
 from .learning import train_suite
-from .tables import Forecast, Model, Promotion, now
+from .tables import Forecast, now
 from .timeutil import utc
 from .training_inputs import validate_backtest_inputs, validate_training_inputs
 
@@ -70,6 +70,10 @@ def run_backtest(
 
 
 def execute(kind, payload, progress):
+    if kind == "forecast":
+        from .forecast_execution import run_forecast
+
+        return run_forecast(payload, progress)
     if kind == "demo":
         experiment = seed_catalogue(lambda p: progress(p * 0.3))
         return run_backtest(
@@ -175,6 +179,31 @@ def execute(kind, payload, progress):
         )
 
     experiment_id = payload.get("experiment_id")
+    if kind == "reconcile":
+        if not experiment_id or not payload.get("start") or not payload.get("end"):
+            raise ValueError("Scheduled reconciliation requires an experiment and pinned interval")
+        start, end = utc(payload["start"]), utc(payload["end"])
+        if end - start != timedelta(days=31) or end > now():
+            raise ValueError("Scheduled reconciliation requires a completed 31-day interval")
+        experiment, _ = load_experiment(experiment_id)
+        if experiment.synthetic or experiment.config["provider"] not in {"usgs", "jma"}:
+            raise ValueError("Scheduled reconciliation requires a real USGS or JMA experiment")
+        progress(0)
+        ingestion = None
+        if experiment.config["provider"] == "usgs":
+            ingestion = ingest_usgs(experiment_id, start, end, lambda p: progress(0.8 * p), use_feed=False)
+        # One durable job provides actual ordering: a failed refresh cannot be
+        # followed by its evaluation merely because two queued jobs tied in time.
+        # A partial refresh may still yield explicit unavailable observations.
+        progress(0.8)
+        evaluation = execute("evaluate", {"experiment_id": experiment_id}, lambda p: progress(0.8 + 0.2 * p))
+        progress(1)
+        return {
+            "experiment_id": experiment_id,
+            "scheduled_end": end.isoformat(),
+            "ingestion": ingestion,
+            **evaluation,
+        }
     if kind == "ingest":
         experiment_id = experiment_id or real_experiment().id
         end = utc(payload["end"]) if payload.get("end") else now()
@@ -221,36 +250,6 @@ def execute(kind, payload, progress):
             "experiment_id": experiment_id,
             "models": [{"id": m.id, "algorithm": m.algorithm, "status": m.status} for m in models],
         }
-    if kind == "forecast":
-        start = utc(payload["start"]) if payload.get("start") else now() + timedelta(minutes=30)
-        cutoff = start - timedelta(minutes=30)
-        model_id = payload.get("model_id")
-        with transaction() as s:
-            if not model_id:
-                promotion = s.scalar(
-                    select(Promotion)
-                    .where(Promotion.experiment_id == experiment_id)
-                    .order_by(Promotion.created_at.desc())
-                    .limit(1)
-                )
-                model_id = (
-                    promotion.model_id
-                    if promotion
-                    else s.scalar(
-                        select(Model.id)
-                        .where(
-                            Model.experiment_id == experiment_id,
-                            Model.status == "available",
-                            Model.algorithm == "historical_rate",
-                        )
-                        .order_by(Model.created_at.desc())
-                        .limit(1)
-                    )
-                )
-        if not model_id:
-            raise ValueError("No eligible model. Import sufficient history and train first")
-        prediction = issue_forecast(experiment_id, model_id, start, cutoff=cutoff, progress=progress)
-        return {"forecast_id": prediction.id}
     if kind == "evaluate":
         with transaction() as s:
             ids = list(

@@ -3,14 +3,13 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
-from sqlalchemy import text
-from sqlalchemy.dialects.postgresql import insert
-
-from .db import engine, transaction
+from .execution import JobOwnershipLost, LostOwnership, WorkerOwnershipLost, execution_scope
+from .forecast_errors import LegacyRetryIdentityUnknown, PublicationDeadlineMissed
 from .jobs import Cancelled, checkpoint, claim, finish
-from .tables import WorkerState, now
+from .worker_locks import worker_session
 
 log = logging.getLogger("yureatlas.worker")
+HEARTBEAT_SECONDS = 15
 
 
 def dispatch(kind, payload, progress):
@@ -21,43 +20,59 @@ def dispatch(kind, payload, progress):
     return execute(kind, payload, progress)
 
 
-def run_once() -> bool:
-    job = claim()
-    if not job:
+def run_once(owner) -> bool:
+    job = claim(owner)
+    if job is None:
         return False
     stop = threading.Event()
+    interruption = []
 
     def heartbeat():
-        while not stop.wait(15):
+        while not stop.wait(HEARTBEAT_SECONDS):
             try:
-                checkpoint(job.id)
-                with transaction() as s:
-                    s.execute(
-                        insert(WorkerState)
-                        .values(id="scheduler", heartbeat=now(), details={"active_job": job.id})
-                        .on_conflict_do_update(
-                            index_elements=[WorkerState.id],
-                            set_={"heartbeat": now(), "details": {"active_job": job.id}},
-                        )
-                    )
-            except Cancelled:
+                checkpoint(job.id, job.attempt_token, owner)
+            except (Cancelled, LostOwnership) as exc:
+                interruption.append(exc)
                 return
             except Exception:
+                # Temporary DB failure does not extend the lease. The next
+                # checkpoint or final transaction guard still fails closed.
                 log.exception("Heartbeat failed")
+
+    def progress(value):
+        if interruption:
+            raise interruption[0]
+        checkpoint(job.id, job.attempt_token, owner, value)
+
+    def complete(status, *, result=None, error=None):
+        try:
+            return finish(job.id, job.attempt_token, owner, status, result, error)
+        except JobOwnershipLost:
+            log.warning("Job %s attempt lost ownership; completion left unchanged", job.id)
+            return None
 
     with ThreadPoolExecutor(max_workers=1) as pool:
         pool.submit(heartbeat)
         try:
-            result = dispatch(job.kind, job.payload, lambda p: checkpoint(job.id, p))
-            finish(job.id, "completed", result)
+            with execution_scope(owner, job_id=job.id, attempt_token=job.attempt_token):
+                progress(0)
+                result = dispatch(job.kind, job.payload, progress)
+            if interruption:
+                raise interruption[0]
+            complete("completed", result=result)
+        except WorkerOwnershipLost:
+            raise  # Stop this worker; a successor owns or may acquire the database.
+        except JobOwnershipLost:
+            log.warning("Job %s attempt lost ownership; later claims may recover it", job.id)
         except Cancelled as exc:
-            finish(job.id, "cancelled", error=str(exc))
+            complete("cancelled", error=str(exc))
+        except PublicationDeadlineMissed as exc:
+            complete("missed", result=exc.result, error=str(exc))
+        except LegacyRetryIdentityUnknown as exc:
+            complete("failed", result=exc.result, error=str(exc))
         except Exception as exc:
             log.exception("Job %s failed", job.id)
-            missed = (
-                job.kind == "forecast" and job.payload.get("scheduled") and "deadline" in str(exc).lower()
-            )
-            finish(job.id, "missed" if missed else "failed", error=str(exc)[:4000])
+            complete("failed", error=str(exc)[:4000])
         finally:
             stop.set()
     return True
@@ -65,22 +80,17 @@ def run_once() -> bool:
 
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    # A session-level advisory lock enforces one worker/scheduler per database.
-    with engine.connect() as lock:
-        if not lock.scalar(text("SELECT pg_try_advisory_lock(8247711)")):
-            raise RuntimeError("A YureAtlas worker is already running")
+    with worker_session() as owner:
         from .scheduling import start_scheduler
 
-        start_scheduler()
-        while True:
-            with transaction() as s:
-                s.execute(
-                    insert(WorkerState)
-                    .values(id="scheduler", heartbeat=now(), details={})
-                    .on_conflict_do_update(index_elements=[WorkerState.id], set_={"heartbeat": now()})
-                )
-            if not run_once():
-                time.sleep(1)
+        scheduler = start_scheduler(owner=owner)
+        try:
+            while True:
+                if not run_once(owner):
+                    time.sleep(1)
+        finally:
+            if scheduler is not None:
+                scheduler.shutdown(wait=True)
 
 
 if __name__ == "__main__":

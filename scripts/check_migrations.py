@@ -36,6 +36,8 @@ TABLE_KEYS = {
     "evaluation_runs": ("id",),
     "evaluation_cells": ("evaluation_id", "cell_id"),
     "model_promotions": ("id",),
+    "jobs": ("id",),
+    "worker_state": ("id",),
 }
 JSON_COLUMNS = {
     "details",
@@ -48,6 +50,9 @@ JSON_COLUMNS = {
     "metadata",
     "provenance",
     "metrics",
+    "payload",
+    "result",
+    "execution",
 }
 CONFIG_002 = {
     "name": "migration_legacy",
@@ -330,6 +335,30 @@ def seed_002(engine, artifact_dir):
                 "reason": "Artificial archived promotion",
             },
         )
+        insert_row(
+            connection,
+            "jobs",
+            {
+                "id": "legacy-job",
+                "created_at": day(1),
+                "logical_key": "legacy-job-key",
+                "kind": "ping",
+                "payload": {"legacy": True},
+                "status": "running",
+                "attempts": 1,
+                "progress": 0.25,
+                "heartbeat": day(1),
+                "lease_until": day(1) + timedelta(minutes=2),
+                "cancel_requested": False,
+                "error": None,
+                "result": {},
+            },
+        )
+        insert_row(
+            connection,
+            "worker_state",
+            {"id": "scheduler", "heartbeat": day(1), "details": {"active_job": "legacy-job"}},
+        )
     return records, artifacts
 
 
@@ -470,10 +499,15 @@ def main():
             f"Seeded schema002: {sum(map(len, original.values()))} rows and {len(artifacts)} artifacts",
             flush=True,
         )
-        for target in ("003", "004", "005", "head"):
+        for target in ("003", "004", "005", "006", "007", "008", "009", "010", "head"):
             upgrade(target, env)
             assert_preserved(engine, original, artifacts, artifact_dir)
             check_defaults(engine)
+            if target in {"008", "009", "010", "head"}:
+                with engine.connect() as connection:
+                    assert connection.execute(
+                        text("SELECT attempt_token, worker_token, execution FROM jobs WHERE id='legacy-job'")
+                    ).one() == (None, None, None)
             validate_isolation(env)
             check_guards(engine, receipts=target != "003")
             print(

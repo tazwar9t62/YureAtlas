@@ -3,15 +3,18 @@
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import event as sqlalchemy_event
+from sqlalchemy import select, text, update
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import Session as OrmSession
 from yureatlas.archive import evaluate_forecast, issue_forecast, train_rate
 from yureatlas.catalogue import ensure_experiment, ingest_records, revisions_asof
 from yureatlas.db import transaction
-from yureatlas.jobs import claim, enqueue
+from yureatlas.jobs import claim, enqueue, finish
 from yureatlas.schemas import ExperimentSpec
 from yureatlas.tables import Evaluation, ForecastCell, Job, Revision, now
 from yureatlas.timeutil import utc
+from yureatlas.worker_locks import worker_session
 
 pytestmark = pytest.mark.integration
 
@@ -105,12 +108,36 @@ def test_job_key_and_expired_lease(experiment):
     key = experiment.name + "-ping"
     first = enqueue("ping", {}, key)
     assert enqueue("ping", {}, key).id == first.id
-    with transaction() as s:
-        job = s.get(Job, first.id)
-        job.status = "running"
-        job.attempts = 1
-        job.lease_until = now() - timedelta(seconds=1)
-    reclaimed = claim()
-    assert reclaimed.id == first.id and reclaimed.attempts == 2
-    with transaction() as s:
-        s.get(Job, first.id).status = "completed"
+
+    def restrict_job_locks(state):
+        statement = state.statement
+        if (
+            state.is_select
+            and getattr(statement, "_for_update_arg", None) is not None
+            and any(item.get("entity") is Job for item in statement.column_descriptions)
+        ):
+            state.statement = statement.where(Job.id == first.id)
+
+    sqlalchemy_event.listen(OrmSession, "do_orm_execute", restrict_job_locks)
+    try:
+        with worker_session() as owner:
+            original = claim(owner)
+            assert original.id == first.id
+            with transaction() as s:
+                s.execute(
+                    update(Job)
+                    .where(Job.id == first.id)
+                    .values(lease_until=text("clock_timestamp() - interval '1 second'"))
+                )
+            reclaimed = claim(owner)
+            assert reclaimed.id == first.id and reclaimed.attempts == 2
+            assert reclaimed.attempt_token != original.attempt_token
+            finish(reclaimed.id, reclaimed.attempt_token, owner, "completed")
+    finally:
+        sqlalchemy_event.remove(OrmSession, "do_orm_execute", restrict_job_locks)
+        with transaction() as s:
+            s.execute(
+                update(Job)
+                .where(Job.id == first.id, Job.status.in_(["queued", "running"]))
+                .values(status="cancelled", cancel_requested=True, lease_until=None)
+            )
