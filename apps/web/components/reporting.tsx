@@ -258,6 +258,63 @@ export function ComparisonTable({ report }: { report: MetricReport | null }) {
                       {decision.status === "paired"
                         ? "Paired"
                         : decision.reasons.map(reportReason).join("; ")}
+                      <details>
+                        <summary>
+                          Reference rejections:{" "}
+                          {decision.reference_rejection_count}
+                          {" · "}
+                          {decision.reference_rejections_omitted} omitted
+                          examples
+                        </summary>
+                        <p>
+                          {decision.status === "paired"
+                            ? "These rejections were examined before the chosen reference was selected. Search stopped at selection; later candidates are not included."
+                            : decision.reason?.startsWith("candidate_")
+                              ? "Candidate evidence prevented reference selection; no reference search was performed."
+                              : "No compatible reference was selected. These diagnostics cover all reference candidates examined for this window."}
+                        </p>
+                        <p>
+                          Showing {decision.reference_rejections.length}{" "}
+                          earliest rejected-reference examples (up to{" "}
+                          {decision.reference_rejection_limit});{" "}
+                          {decision.reference_rejections_omitted} additional
+                          identities omitted. Totals and reason counts include
+                          every examined rejection.
+                        </p>
+                        {Object.keys(decision.reference_rejection_reasons)
+                          .length ? (
+                          <>
+                            <p>
+                              Rejection reasons across all examined incompatible
+                              candidates (reasons may overlap):
+                            </p>
+                            <ul>
+                              {Object.entries(
+                                decision.reference_rejection_reasons,
+                              ).map(([reason, count]) => (
+                                <li key={reason}>
+                                  {reportReason(reason)}: {count}
+                                </li>
+                              ))}
+                            </ul>
+                          </>
+                        ) : (
+                          <p>No reference rejections were recorded.</p>
+                        )}
+                        {decision.reference_rejections.length > 0 && (
+                          <ol>
+                            {decision.reference_rejections.map((rejection) => (
+                              <li key={rejection.forecast_id}>
+                                <span className="mono">
+                                  {rejection.forecast_id}
+                                </span>
+                                :{" "}
+                                {rejection.reasons.map(reportReason).join("; ")}
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                      </details>
                     </td>
                   </tr>
                 ))}

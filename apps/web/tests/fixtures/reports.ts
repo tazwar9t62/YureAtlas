@@ -172,6 +172,10 @@ function decision(id: string, reference = false): Decision {
     reference_evaluation_version: 1,
     reference_created_at: "2024-12-30T12:00:00Z",
     self_reference: reference,
+    reference_rejection_count: 1,
+    reference_rejections_omitted: 0,
+    reference_rejection_reasons: { revision_mismatch: 1 },
+    reference_rejection_limit: 20,
     reference_rejections: [
       { forecast_id: "wrong-reference", reasons: ["revision_mismatch"] },
     ],
@@ -308,6 +312,9 @@ export function reportFixture(query = new URLSearchParams()): Report {
     reference_evaluation_id: null,
     reference_evaluation_version: null,
     reference_created_at: null,
+    reference_rejection_count: 0,
+    reference_rejections_omitted: 0,
+    reference_rejection_reasons: {},
     reference_rejections: [],
   };
   report.decisions = [...selected, excluded];

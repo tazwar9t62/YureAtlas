@@ -255,7 +255,21 @@ class PairDecision(BaseModel):
     reference_evaluation_version: int | None
     reference_created_at: AwareDatetime | None
     self_reference: bool
-    reference_rejections: list[ReferenceRejection]
+    reference_rejections: list[ReferenceRejection] = Field(
+        max_length=20,
+        description="First rejected references in deterministic search order; examples only, capped at 20.",
+    )
+    reference_rejection_limit: Literal[20]
+    reference_rejection_count: int = Field(
+        ge=0,
+        description="All rejected references examined before the selected reference, or all if none matched.",
+    )
+    reference_rejections_omitted: int = Field(
+        ge=0, description="Examined rejected references omitted from the bounded identity examples."
+    )
+    reference_rejection_reasons: dict[str, int] = Field(
+        description="Complete counts by reason across examined rejections; one reference can have multiple reasons."
+    )
 
 
 class PairedUncertainty(BaseModel):

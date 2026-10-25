@@ -1058,8 +1058,33 @@ export interface components {
             reference_created_at: string | null;
             /** Self Reference */
             self_reference: boolean;
-            /** Reference Rejections */
+            /**
+             * Reference Rejections
+             * @description First rejected references in deterministic search order; examples only, capped at 20.
+             */
             reference_rejections: components["schemas"]["ReferenceRejection"][];
+            /**
+             * Reference Rejection Limit
+             * @constant
+             */
+            reference_rejection_limit: 20;
+            /**
+             * Reference Rejection Count
+             * @description All rejected references examined before the selected reference, or all if none matched.
+             */
+            reference_rejection_count: number;
+            /**
+             * Reference Rejections Omitted
+             * @description Examined rejected references omitted from the bounded identity examples.
+             */
+            reference_rejections_omitted: number;
+            /**
+             * Reference Rejection Reasons
+             * @description Complete counts by reason across examined rejections; one reference can have multiple reasons.
+             */
+            reference_rejection_reasons: {
+                [key: string]: number;
+            };
         };
         /** PairedUncertainty */
         PairedUncertainty: {

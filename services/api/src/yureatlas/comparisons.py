@@ -14,6 +14,7 @@ from .timeutil import utc
 
 POLICY_VERSION = "earliest-compatible-historical-rate-v1"
 SCORE_POLICY_VERSION = "pooled-eligible-cell-windows-v1"
+MAX_REFERENCE_REJECTION_EXAMPLES = 20
 MATCHING_POLICY = (
     "Earliest archived compatible historical_rate reference per exact window, ordered by "
     "forecast.created_at, model_id, forecast_id; same experiment, start/end, mode, grid, "
@@ -162,7 +163,13 @@ def _decision(candidate, references):
         "reference_created_at": None,
         "self_reference": False,
         "reference_rejections": [],
+        "reference_rejection_limit": MAX_REFERENCE_REJECTION_EXAMPLES,
+        "reference_rejection_count": 0,
+        "reference_rejections_omitted": 0,
+        "reference_rejection_reasons": {},
     }
+    rejection_reasons = Counter()
+    selected = None
     if candidate["evidence_reason"]:
         result["reasons"] = [f"candidate_{candidate['evidence_reason']}"]
     elif not references:
@@ -171,9 +178,14 @@ def _decision(candidate, references):
         for reference in references:
             reasons = _mismatches(candidate, reference)
             if reasons:
-                result["reference_rejections"].append(
-                    {"forecast_id": reference["forecast_id"], "reasons": reasons}
-                )
+                result["reference_rejection_count"] += 1
+                rejection_reasons.update(reasons)
+                if len(result["reference_rejections"]) < MAX_REFERENCE_REJECTION_EXAMPLES:
+                    result["reference_rejections"].append(
+                        {"forecast_id": reference["forecast_id"], "reasons": reasons}
+                    )
+                else:
+                    result["reference_rejections_omitted"] += 1
                 continue
             result.update(
                 status="paired",
@@ -184,12 +196,15 @@ def _decision(candidate, references):
                 reference_created_at=reference["forecast_created_at"].isoformat(),
                 self_reference=candidate["forecast_id"] == reference["forecast_id"],
             )
-            return result, reference
-        result["reasons"] = sorted(
-            {reason for rejection in result["reference_rejections"] for reason in rejection["reasons"]}
-        )
-    result["reason"] = result["reasons"][0]
-    return result, None
+            selected = reference
+            break
+        if selected is None:
+            # The example cap must never hide a reason found later in the search.
+            result["reasons"] = sorted(rejection_reasons)
+    result["reference_rejection_reasons"] = dict(sorted(rejection_reasons.items()))
+    if result["reasons"]:
+        result["reason"] = result["reasons"][0]
+    return result, selected
 
 
 def build_comparison_report(records):

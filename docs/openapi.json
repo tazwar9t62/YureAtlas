@@ -2877,7 +2877,34 @@
               "$ref": "#/components/schemas/ReferenceRejection"
             },
             "type": "array",
-            "title": "Reference Rejections"
+            "maxItems": 20,
+            "title": "Reference Rejections",
+            "description": "First rejected references in deterministic search order; examples only, capped at 20."
+          },
+          "reference_rejection_limit": {
+            "type": "integer",
+            "const": 20,
+            "title": "Reference Rejection Limit"
+          },
+          "reference_rejection_count": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Reference Rejection Count",
+            "description": "All rejected references examined before the selected reference, or all if none matched."
+          },
+          "reference_rejections_omitted": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Reference Rejections Omitted",
+            "description": "Examined rejected references omitted from the bounded identity examples."
+          },
+          "reference_rejection_reasons": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Reference Rejection Reasons",
+            "description": "Complete counts by reason across examined rejections; one reference can have multiple reasons."
           }
         },
         "type": "object",
@@ -2903,7 +2930,11 @@
           "reference_evaluation_version",
           "reference_created_at",
           "self_reference",
-          "reference_rejections"
+          "reference_rejections",
+          "reference_rejection_limit",
+          "reference_rejection_count",
+          "reference_rejections_omitted",
+          "reference_rejection_reasons"
         ],
         "title": "PairDecision"
       },

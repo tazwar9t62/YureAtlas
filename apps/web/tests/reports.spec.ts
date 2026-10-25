@@ -388,6 +388,68 @@ test("map evaluation mismatch disables the displayed difference while retaining 
   ).toBeVisible();
 });
 
+test("bounded rejection examples retain complete counts and explain where reference search stopped", async ({
+  page,
+}) => {
+  const state = await openWorkbench(page, {
+    metricHandler: async (route, url, state) => {
+      const report = reportFixture(url.searchParams);
+      const diagnostics = {
+        reference_rejection_limit: 20,
+        reference_rejection_count: 25,
+        reference_rejections_omitted: 5,
+        reference_rejection_reasons: {
+          revision_mismatch: 24,
+          label_mismatch: 1,
+        },
+        reference_rejections: Array.from({ length: 20 }, (_, index) => ({
+          forecast_id: `rejected-reference-${String(index + 1).padStart(2, "0")}`,
+          reasons: ["revision_mismatch"],
+        })),
+      };
+      for (const decision of [
+        ...report.decisions,
+        ...report.comparisons.flatMap((row) => row.decisions),
+      ]) {
+        if (decision.forecast_id === "candidate-one")
+          Object.assign(decision, diagnostics);
+      }
+      state.delivered.push(report);
+      await route.fulfill({ json: report });
+      return true;
+    },
+  });
+  await evaluationScreen(page);
+  await page.getByText(/Gradient boosting.*references and exclusions/).click();
+  const decision = page
+    .getByRole("table", { name: "Reference decisions for candidate-model" })
+    .getByRole("row")
+    .filter({ has: page.getByText("candidate-one", { exact: true }) });
+  await expect(
+    decision.getByText("chosen-reference", { exact: true }),
+  ).toBeVisible();
+  await decision
+    .getByText("Reference rejections: 25 · 5 omitted examples", { exact: true })
+    .click();
+  await expect(decision).toContainText(
+    "Showing 20 earliest rejected-reference examples (up to 20); 5 additional identities omitted.",
+  );
+  await expect(decision).toContainText(
+    "Search stopped at selection; later candidates are not included.",
+  );
+  await expect(
+    decision.getByText("Observed cell labels differ: 1", { exact: true }),
+  ).toBeVisible();
+  const examples = decision.locator("ol").getByRole("listitem");
+  await expect(examples).toHaveCount(20);
+  await expect(examples.first()).toContainText("rejected-reference-01");
+  await expect(examples.last()).toContainText("rejected-reference-20");
+  await expect(decision.locator("ol")).not.toContainText(
+    "Observed cell labels differ",
+  );
+  expect(state.unexpected).toEqual([]);
+});
+
 test("an unavailable selected map leaves the difference disabled and explains the failure", async ({
   page,
 }) => {
