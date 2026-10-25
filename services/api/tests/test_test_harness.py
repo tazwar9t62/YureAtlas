@@ -493,6 +493,7 @@ if sys.argv[3] != 'success':
         return process
 
     monkeypatch.setattr(harness.subprocess, "Popen", launch)
+    cleanup_confirmed = False
     try:
         if completion == "success":
             harness.run_child(args, dict(os.environ), timeout=2)
@@ -505,12 +506,14 @@ if sys.argv[3] != 'success':
         readable, _, _ = select.select([process.stdout], [], [], 3)
         assert readable, "A surviving descendant still holds the stdout pipe open"
         assert os.read(process.stdout.fileno(), 4096) == b"", "Child output indicates a fixture failure"
+        cleanup_confirmed = True
     finally:
         # Also clean up if the regression returns: these are only processes created by this test.
         for process in launched:
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
+            if not cleanup_confirmed:
+                try:
+                    os.killpg(process.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
             process.wait(timeout=3)
             process.stdout.close()
