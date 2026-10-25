@@ -54,8 +54,8 @@ Problem: the repository documents a paused checkpoint, but has no active issue/P
 
 | Smaller issue | Acceptance | Status / commit |
 | --- | --- | --- |
-| T00.1 [#2](https://github.com/tazwar9t62/YureAtlas/issues/2): detailed backlog | Ordered tasks cover audit findings and unfinished brief requirements; each has issue-sized work, dependencies, and concrete checks; current and historical evidence are distinct. | Implemented; commit recorded in issue/PR |
-| T00.2 [#3](https://github.com/tazwar9t62/YureAtlas/issues/3): documentation navigation and review guidance | README, handoff, and build record link to this tracker; dated historical evidence is preserved; concise review rules protect immutable history, temporal validity, source separation, and honest status. | Planned |
+| T00.1 [#2](https://github.com/tazwar9t62/YureAtlas/issues/2): detailed backlog | Ordered tasks cover audit findings and unfinished brief requirements; each has issue-sized work, dependencies, and concrete checks; current and historical evidence are distinct. | Implemented in `e866d54` |
+| T00.2 [#3](https://github.com/tazwar9t62/YureAtlas/issues/3): documentation navigation and review guidance | README, handoff, and build record link to this tracker; dated historical evidence is preserved; concise review rules protect immutable history, temporal validity, source separation, and honest status. | Implemented; commit recorded in issue/PR |
 
 Completion gate: documentation links resolve, `git diff --check` passes, and the documentation PR receives the requested clear bot review before merging.
 
@@ -200,5 +200,6 @@ Acceptance: all engineering acceptance items above are verified and merged throu
 | 2026-10-25 | T00 started from clean main at `8ed2323c318be9f20986358acc93076139bd8539`. | Remote main matched; branch `chore/completion-plan`; parent issue #1. |
 | 2026-10-25 | GitHub connector issue creation returned integration HTTP 403. | Existing authenticated GitHub CLI provides the authorized write fallback; connector reads remain usable. |
 | 2026-10-25 | T00.1 implemented: detailed backlog, status definitions, review gates, and baseline evidence. | Relative links and all 12 main-task sections checked; whitespace check passed. |
+| 2026-10-25 | T00.2 implemented: README/handoff/build record navigation and focused repository review guidance. | Documentation-only changes; current application verification remains at the baseline above. PR/review pending. |
 
 Each subsequent task updates this ledger and the task board before its PR. Exact current-head review and merge evidence also lives in the linked GitHub PR/issue to avoid self-referential commit hashes in this file.

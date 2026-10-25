@@ -1,6 +1,6 @@
-# Paused development checkpoint
+# Historical development checkpoint
 
-Development paused at the user's request on 2026-09-29. This is an unfinished prototype checkpoint, not a completed or release-ready build. Resume the remaining work only when requested.
+Development paused at the user's request on 2026-09-29 and resumed at their request on 2026-10-25. This document preserves the unfinished checkpoint and its local state; it does not describe current verification results. The [remaining-task tracker](remaining-tasks.md) is now the active ordered plan and status record. The application is not yet a completed or release-ready build.
 
 ## Saved implementation
 
@@ -12,7 +12,9 @@ Development paused at the user's request on 2026-09-29. This is an unfinished pr
 
 The original brief remains at `/Users/mdtazwarislam/Downloads/YureAtlas_Fullstack_Local_Build_Prompt.md` on the development machine. Architecture, experiment definitions and model limitations are in the neighboring documentation files. See [verification.md](verification.md) for evidence and failures.
 
-## Resume in this order
+## Original resume checklist (2026-09-29)
+
+These items are incorporated into the active tracker, whose dependency order and evidence supersede this historical checklist.
 
 1. Check Docker/PostgreSQL health and resource usage. The latest backend run ended with database connection failures: 15 passed, 4 setup errors; cleanup also lost its database connection. Determine the cause before retrying. The disposable database `yureatlas_test_3750f48415c9` may remain after the failed cleanup. Preserve the main database and its immutable archive.
 2. Re-run `OMP_NUM_THREADS=2 OPENBLAS_NUM_THREADS=2 .venv/bin/python scripts/test_backend.py` once the database is healthy. Confirm isolation and cleanup. An earlier run passed 18 tests, but that does not establish that this checkpoint passes.
