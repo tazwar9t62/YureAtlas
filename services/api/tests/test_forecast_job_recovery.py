@@ -10,12 +10,14 @@ import pytest
 from sqlalchemy import event, func, select, text, update
 from sqlalchemy.orm import Session as OrmSession
 from yureatlas import archive, forecast_execution, jobs, worker
+from yureatlas import schedule_configuration as configuration
 from yureatlas.artifacts import canonical, put, read
 from yureatlas.catalogue import ensure_experiment, ingest_records, load_experiment, make_snapshot
 from yureatlas.config import settings
 from yureatlas.db import Session, transaction
 from yureatlas.forecast_errors import PublicationDeadlineMissed
 from yureatlas.rate import HistoricalRate
+from yureatlas.schedule_schemas import ScheduleUpdate
 from yureatlas.schemas import ExperimentSpec
 from yureatlas.tables import Forecast, ForecastCell, Job, Promotion
 from yureatlas.timeutil import utc
@@ -29,8 +31,28 @@ class SimulatedCrash(BaseException):
 
 
 @pytest.fixture
-def owned_queue():
+def owned_queue(monkeypatch):
+    monkeypatch.setattr(settings, "schedule_enabled", True)
     identities = set()
+    experiment_ids = set()
+    with transaction() as session:
+        original_policy = configuration.load_schedule(session)["spec"]
+
+    def save_policy(spec, reason):
+        with transaction() as session:
+            revision = configuration.load_schedule(session)["revision"]
+        configuration.update_schedule(ScheduleUpdate(expected_revision=revision, spec=spec, reason=reason))
+
+    def select_owned_experiments():
+        save_policy(
+            {
+                "enabled": True,
+                "scope": "selected",
+                "experiment_ids": sorted(experiment_ids),
+                "kinds": ["forecast"],
+            },
+            "Enable only owned forecast-recovery experiments",
+        )
 
     def scoped_locks(state):
         statement = state.statement
@@ -42,12 +64,18 @@ def owned_queue():
             state.statement = statement.where(Job.id.in_(identities))
 
     def enqueue(payload, key=None):
+        # Manual/legacy requests remain manual. Scheduled requests still pass
+        # through the actual persisted policy and claim predicate.
+        if payload.get("scheduled") is True and payload.get("experiment_id") not in experiment_ids:
+            experiment_ids.add(payload["experiment_id"])
+            select_owned_experiments()
         job = jobs.enqueue("forecast", payload, key or "forecast-recovery:" + uuid4().hex)
         identities.add(job.id)
         return job
 
     event.listen(OrmSession, "do_orm_execute", scoped_locks)
     try:
+        select_owned_experiments()
         yield enqueue
     finally:
         event.remove(OrmSession, "do_orm_execute", scoped_locks)
@@ -57,6 +85,9 @@ def owned_queue():
                 .where(Job.id.in_(identities), Job.status.in_(["queued", "running"]))
                 .values(status="cancelled", cancel_requested=True, lease_until=None)
             )
+        # Preserve audit history, restoring the former request with a new
+        # revision rather than mutating or deleting earlier configuration.
+        save_policy(original_policy, "Restore policy after owned forecast recovery acceptance")
 
 
 @pytest.fixture

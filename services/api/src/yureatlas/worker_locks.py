@@ -7,6 +7,7 @@ from uuid import uuid4
 from sqlalchemy import select, text
 from sqlalchemy.dialects.postgresql import insert
 
+from .config import settings
 from .db import Session, engine
 from .execution import WORKER_LOCK_KEY, WORKER_STATE_ID, WorkerOwner, WorkerOwnershipLost, holds_worker_lock
 from .tables import WorkerState
@@ -38,6 +39,7 @@ def register_worker(owner: WorkerOwner):
             "pid": owner.pid,
             "backend_start": owner.backend_start.isoformat(),
             "active_job": None,
+            "schedule_environment_enabled": settings.schedule_enabled,
         }
 
 

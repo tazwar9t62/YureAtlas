@@ -100,15 +100,21 @@ def claim(owner) -> Job | None:
     # Control transactions deliberately use their explicit owner checks rather
     # than recursively applying a dispatch context's final commit guard.
     with Session.begin() as s:
+        from .schedule_configuration import automatic_job_predicate, lock_schedule
+
+        lock_schedule(s)
         worker = verify_worker(s, owner)
         candidates = s.scalars(
             select(Job)
             .where(
+                # Policy pauses dispatch, not terminal cleanup after a dead
+                # attempt. These exceptions can never enter the dispatch path.
+                or_(automatic_job_predicate(s), Job.cancel_requested, Job.attempts >= MAX_ATTEMPTS),
                 or_(
                     Job.status == "queued",
                     (Job.status == "running")
                     & or_(Job.lease_until.is_(None), Job.lease_until <= func.clock_timestamp()),
-                )
+                ),
             )
             .order_by(Job.created_at, Job.id)
             .with_for_update(skip_locked=True)

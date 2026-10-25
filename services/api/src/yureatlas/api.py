@@ -3,7 +3,7 @@ from datetime import timedelta
 
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import JSONResponse
-from pydantic import AwareDatetime, BaseModel, Field
+from pydantic import AwareDatetime, BaseModel
 from sqlalchemy import func, select, text
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
@@ -11,6 +11,15 @@ from . import tables as t
 from .config import settings
 from .db import engine, transaction
 from .eligibility import eligible_cell
+from .promotion_schemas import CurrentModelSelection, PromotionCreated, PromotionHistory, PromotionRequest
+from .promotion_state import PromotionNotFound, create_promotion, get_current_selection, get_promotion_history
+from .schedule_configuration import (
+    ScheduleConflict,
+    get_schedule_history,
+    get_schedule_status,
+    update_schedule,
+)
+from .schedule_schemas import ScheduleHistory, ScheduleRevision, ScheduleStatus, ScheduleUpdate
 from .schemas import (
     EvaluationView,
     ExperimentSpec,
@@ -332,21 +341,50 @@ def backtest(body: JobRequest):
     return submit("backtest", body)
 
 
-class PromotionRequest(BaseModel):
-    model_id: str
-    reason: str = Field(min_length=5, max_length=500)
+@app.post("/model-promotions", response_model=PromotionCreated)
+def promote(body: PromotionRequest):
+    try:
+        return create_promotion(body.model_id, body.reason)
+    except PromotionNotFound as error:
+        raise HTTPException(404, str(error)) from error
 
 
-@app.post("/model-promotions")
-def promote(body: PromotionRequest) -> dict:
-    with transaction() as s:
-        model = s.get(t.Model, body.model_id)
-        if not model or model.status != "available":
-            raise HTTPException(422, "Only an available compatible model can be promoted")
-        promotion = t.Promotion(experiment_id=model.experiment_id, model_id=model.id, reason=body.reason)
-        s.add(promotion)
-        s.flush()
-        return {"id": promotion.id, "model_id": model.id, "affects": "future forecasts only"}
+@app.get("/experiments/{experiment_id}/promotions", response_model=PromotionHistory)
+def promotion_history(
+    experiment_id: str,
+    limit: int = Query(25, ge=1, le=100),
+    before: str | None = Query(None, min_length=1, max_length=1024),
+):
+    try:
+        return get_promotion_history(experiment_id, limit=limit, before=before)
+    except PromotionNotFound as error:
+        raise HTTPException(404, str(error)) from error
+
+
+@app.get("/experiments/{experiment_id}/model-selection", response_model=CurrentModelSelection)
+def current_model_selection(experiment_id: str, start: AwareDatetime | None = Query(None)):
+    try:
+        return get_current_selection(experiment_id, start=start)
+    except PromotionNotFound as error:
+        raise HTTPException(404, str(error)) from error
+
+
+@app.get("/schedules", response_model=ScheduleStatus)
+def schedule_status():
+    return get_schedule_status()
+
+
+@app.put("/schedules", response_model=ScheduleRevision)
+def configure_schedule(body: ScheduleUpdate):
+    try:
+        return update_schedule(body)
+    except ScheduleConflict as error:
+        raise HTTPException(409, str(error)) from error
+
+
+@app.get("/schedules/history", response_model=ScheduleHistory)
+def schedule_history(limit: int = Query(25, ge=1, le=100), before_revision: int | None = Query(None, ge=1)):
+    return get_schedule_history(limit=limit, before_revision=before_revision)
 
 
 @app.get("/sources")

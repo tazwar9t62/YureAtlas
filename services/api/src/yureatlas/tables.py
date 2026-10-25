@@ -239,6 +239,29 @@ class Promotion(Identity, Base):
     experiment_id: Mapped[str] = mapped_column(ForeignKey("experiment_versions.id"), index=True)
     model_id: Mapped[str] = mapped_column(ForeignKey("model_versions.id"))
     reason: Mapped[str] = mapped_column(Text)
+    __table_args__ = (Index("promotion_history_order", "experiment_id", "created_at", "id"),)
+
+
+class ScheduleConfig(Identity, Base):
+    __tablename__ = "schedule_configurations"
+    revision: Mapped[int] = mapped_column(Integer, unique=True)
+    spec: Mapped[dict] = mapped_column(JSONB)
+    reason: Mapped[str] = mapped_column(Text)
+    __table_args__ = (CheckConstraint("revision > 0"),)
+
+
+class SchedulerRuntime(Base):
+    """Last successfully committed configuration application, separate from decisions."""
+
+    __tablename__ = "scheduler_runtime"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    owner_token: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    effective_enabled: Mapped[bool] = mapped_column(Boolean)
+    status: Mapped[str] = mapped_column(String)
+    details: Mapped[dict] = mapped_column(JSONB, default=dict)
+    __table_args__ = (CheckConstraint("revision >= 0"),)
 
 
 class WorkerState(Base):

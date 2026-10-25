@@ -499,11 +499,11 @@ def main():
             f"Seeded schema002: {sum(map(len, original.values()))} rows and {len(artifacts)} artifacts",
             flush=True,
         )
-        for target in ("003", "004", "005", "006", "007", "008", "head"):
+        for target in ("003", "004", "005", "006", "007", "008", "009", "head"):
             upgrade(target, env)
             assert_preserved(engine, original, artifacts, artifact_dir)
             check_defaults(engine)
-            if target in {"008", "head"}:
+            if target in {"008", "009", "head"}:
                 with engine.connect() as connection:
                     assert connection.execute(
                         text("SELECT attempt_token, worker_token, execution FROM jobs WHERE id='legacy-job'")

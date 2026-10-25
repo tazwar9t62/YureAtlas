@@ -10,32 +10,34 @@ from sqlalchemy import select, text
 
 from .config import settings
 from .db import transaction
-from .execution import WorkerOwnershipLost, execution_scope
+from .execution import WorkerOwnershipLost, current_execution, execution_scope
 from .jobs import enqueue, enqueue_batch, enqueue_missed
-from .tables import Experiment, SchedulerState, now
+from .schedule_configuration import MAX_EXPERIMENTS, load_schedule, lock_schedule, schedule_spec_hash
+from .tables import Experiment, SchedulerRuntime, SchedulerState, now
 from .timeutil import JST, jst_day, next_day, utc
 
 log = logging.getLogger("yureatlas.scheduling")
 STATE_ID = "default"
 RECONCILE_SECONDS = 30
 MAX_EXPIRED_TARGETS = 31
-MAX_REAL_EXPERIMENTS = 100
+MAX_REAL_EXPERIMENTS = MAX_EXPERIMENTS
 POLICY_VERSION = "jst-latest-due-v1"
 MISSED_REASON = "No recorded on-time scheduling decision before the prospective publication deadline"
 
 
-def real_experiments(*, session=None):
+def real_experiments(*, session=None, experiment_ids=None):
     if session is None:
         with transaction() as owned:
-            return real_experiments(session=owned)
-    experiments = list(
-        session.scalars(
-            select(Experiment)
-            .where(Experiment.synthetic == False)
-            .order_by(Experiment.created_at, Experiment.id)
-            .limit(MAX_REAL_EXPERIMENTS + 1)
-        )
+            return real_experiments(session=owned, experiment_ids=experiment_ids)
+    statement = (
+        select(Experiment)
+        .where(Experiment.synthetic == False)
+        .order_by(Experiment.created_at, Experiment.id)
+        .limit(MAX_REAL_EXPERIMENTS + 1)
     )
+    if experiment_ids is not None:
+        statement = statement.where(Experiment.id.in_(experiment_ids))
+    experiments = list(session.scalars(statement))
     if len(experiments) > MAX_REAL_EXPERIMENTS:
         raise ValueError(
             f"Automatic scheduling supports at most {MAX_REAL_EXPERIMENTS} real experiments; "
@@ -61,7 +63,7 @@ def _daily_plan(experiment_id, created_at, start, timestamp):
 
 
 def daily_forecast_decision(experiment_id, created_at, start, timestamp, *, session=None):
-    """Queue the due daily window, or atomically record an absent expired one."""
+    """Low-level insertion; automatic callers must first apply persisted policy."""
     if not settings.schedule_enabled:
         return None
     plan = _daily_plan(experiment_id, created_at, start, timestamp)
@@ -89,6 +91,79 @@ def latest_due(timestamp):
         weekly -= timedelta(days=7)
     quarter = timestamp.replace(minute=timestamp.minute // 15 * 15, second=0, microsecond=0)
     return {"ingest": quarter, "evaluate": daily(6), "reconcile": daily(6, 30), "train": weekly}
+
+
+def next_regular_due(timestamp):
+    """Return strictly future regular occurrences, separately from recovery work."""
+    timestamp = utc(timestamp)
+    previous = latest_due(timestamp)
+    today, _ = jst_day(timestamp.astimezone(JST).date())
+    forecast = today + timedelta(hours=23, minutes=40)
+    if forecast <= timestamp:
+        forecast += timedelta(days=1)
+    return {
+        "ingest": previous["ingest"] + timedelta(minutes=15),
+        "forecast": forecast,
+        "evaluate": previous["evaluate"] + timedelta(days=1),
+        "reconcile": previous["reconcile"] + timedelta(days=1),
+        "train": previous["train"] + timedelta(days=7),
+    }
+
+
+def _disabled_reason(spec):
+    if not spec["enabled"]:
+        return "persisted_disabled"
+    if not spec["kinds"]:
+        return "empty_kinds"
+    if spec["scope"] == "selected" and not spec["experiment_ids"]:
+        return "empty_scope"
+    return None
+
+
+def _configured_experiments(session, spec):
+    if spec["scope"] == "selected":
+        experiments = real_experiments(session=session, experiment_ids=spec["experiment_ids"])
+        if {experiment.id for experiment in experiments} != set(spec["experiment_ids"]):
+            raise ValueError("Selected automatic schedule scope contains missing or synthetic experiments")
+        return experiments
+    return real_experiments(session=session)
+
+
+def _record_runtime(session, configuration, timestamp, *, reason=None, decisions=None):
+    """Acknowledge only a complete transaction; never advance the decision cursor."""
+    spec = configuration["spec"]
+    execution = current_execution()
+    runtime = session.get(SchedulerRuntime, STATE_ID)
+    if runtime is None:
+        runtime = SchedulerRuntime(id=STATE_ID)
+        session.add(runtime)
+    runtime.revision = configuration["revision"]
+    runtime.observed_at = timestamp
+    runtime.owner_token = execution.owner.token if execution is not None else None
+    runtime.effective_enabled = reason is None
+    runtime.status = "applied" if reason is None else "disabled"
+    decisions = decisions or {}
+    runtime.details = {
+        "config_id": configuration["id"],
+        "spec_hash": schedule_spec_hash(spec),
+        "reason": reason,
+        "scope": spec["scope"],
+        "experiment_ids": spec["experiment_ids"],
+        "kinds": spec["kinds"],
+        "experiment_count": decisions.get("experiment_count", 0),
+        "planned_jobs": decisions.get("planned_jobs", 0),
+        "inserted_jobs": decisions.get("inserted_jobs", 0),
+    }
+
+
+def _disabled_application(session, configuration, timestamp, reason):
+    _record_runtime(session, configuration, timestamp, reason=reason)
+    return {
+        "status": "disabled",
+        "revision": configuration["revision"],
+        "spec_hash": schedule_spec_hash(configuration["spec"]),
+        "disable_reason": reason,
+    }
 
 
 def _safe_plans(experiment, due):
@@ -124,12 +199,18 @@ def _safe_plans(experiment, due):
 def _safe_trigger(kind, timestamp=None):
     if not settings.schedule_enabled:
         return None
-    timestamp = utc(timestamp if timestamp is not None else now())
-    due = latest_due(timestamp)
+    requested_timestamp = utc(timestamp) if timestamp is not None else None
     with transaction() as session:
+        lock_schedule(session)
+        configuration = load_schedule(session)
+        spec = configuration["spec"]
+        if _disabled_reason(spec) or kind not in spec["kinds"]:
+            return None
+        timestamp = requested_timestamp if requested_timestamp is not None else utc(now())
+        due = latest_due(timestamp)
         plans = [
             plan
-            for experiment in real_experiments(session=session)
+            for experiment in _configured_experiments(session, spec)
             for plan in _safe_plans(experiment, {kind: due[kind]})
         ]
         return enqueue_batch(plans, session=session)
@@ -142,10 +223,15 @@ def ingest_trigger(timestamp=None):
 def forecast_trigger(timestamp=None):
     if not settings.schedule_enabled:
         return
-    timestamp = utc(timestamp if timestamp is not None else now())
-    start, _ = next_day(timestamp)
+    requested_timestamp = utc(timestamp) if timestamp is not None else None
     with transaction() as session:
-        for experiment in real_experiments(session=session):
+        lock_schedule(session)
+        spec = load_schedule(session)["spec"]
+        if _disabled_reason(spec) or "forecast" not in spec["kinds"]:
+            return
+        timestamp = requested_timestamp if requested_timestamp is not None else utc(now())
+        start, _ = next_day(timestamp)
+        for experiment in _configured_experiments(session, spec):
             daily_forecast_decision(experiment.id, experiment.created_at, start, timestamp, session=session)
 
 
@@ -162,58 +248,79 @@ def reconcile(timestamp=None):
 
     The high watermark never moves backward. The previous *observed* clock is
     still used to recover elapsed windows after a backward jump and later sleep.
-    Disabled scheduling leaves both jobs and this state unchanged.
+    Disabled persisted policy acknowledges application without advancing this
+    cursor. Environment disablement reaches neither jobs nor runtime state.
     """
     if not settings.schedule_enabled:
         return {"status": "disabled"}
     requested_timestamp = utc(timestamp) if timestamp is not None else None
     with transaction() as session:
         session.execute(text("SET LOCAL statement_timeout = '10s'"))
-        session.execute(text("SELECT pg_advisory_xact_lock(8247714, 1)"))
+        lock_schedule(session)
         # Default decisions use the clock after any lock wait. A captured time
         # from before midnight must not queue an already expired target, or make
         # contention between callers look like a backwards wall-clock jump.
         timestamp = requested_timestamp if requested_timestamp is not None else utc(now())
+        configuration = load_schedule(session)
+        spec = configuration["spec"]
+        spec_hash = schedule_spec_hash(spec)
+        reason = _disabled_reason(spec)
+        if reason:
+            return _disabled_application(session, configuration, timestamp, reason)
         today, _ = jst_day(timestamp.astimezone(JST).date())
         # Exactly 31 expired midnight targets, including today's, plus the upcoming
         # target. Older windows are summarized explicitly, never silently replayed.
         retained_from = today - timedelta(days=MAX_EXPIRED_TARGETS - 1)
-        due = latest_due(timestamp)
-        experiments = real_experiments(session=session)
+        due = {kind: value for kind, value in latest_due(timestamp).items() if kind in spec["kinds"]}
+        experiments = _configured_experiments(session, spec)
+        if not experiments:
+            return _disabled_application(session, configuration, timestamp, "empty_scope")
+        if set(spec["kinds"]) == {"ingest"} and not any(
+            experiment.config["provider"] == "usgs" for experiment in experiments
+        ):
+            return _disabled_application(session, configuration, timestamp, "no_applicable_kinds")
         state = session.get(SchedulerState, STATE_ID)
         previous_details = state.details if state else {}
         previous_observed = utc(state.observed_at) if state else None
         previous_high = utc(state.reconciled_at) if state else timestamp
         regressed = previous_observed is not None and timestamp < previous_observed
-        # A backward clock check considers only bounded recent/current work.
-        # It does not invent an elapsed interval extending into the future.
-        after = timestamp - timedelta(days=MAX_EXPIRED_TARGETS) if regressed else previous_observed
+        scope_changed = state is not None and previous_details.get("spec_hash") != spec_hash
+        # A new active policy may include targets that the old cursor never
+        # covered. Reset its lower bound, retaining the same bounded recovery.
+        # Clock regression alone considers only recent/current work.
+        if scope_changed:
+            after = None
+        elif regressed:
+            after = timestamp - timedelta(days=MAX_EXPIRED_TARGETS)
+        else:
+            after = previous_observed
         plans = {}
         omitted = []
         for experiment in experiments:
             created = utc(experiment.created_at)
-            requested_after = max(created, after) if after is not None else created
-            first, _ = next_day(requested_after)
-            if first < retained_from:
-                omitted.append(
-                    {
-                        "experiment_id": experiment.id,
-                        "from": first.isoformat(),
-                        "before": retained_from.isoformat(),
-                        "target_count": (retained_from - first).days,
-                    }
-                )
-            cursor = max(first, retained_from)
-            while cursor <= today:
-                plan = _daily_plan(experiment.id, created, cursor, timestamp)
-                if plan:
-                    plans[plan["key"]] = plan
-                cursor += timedelta(days=1)
-            # Current and upcoming decisions never depend on cursor catch-up.
-            for start in (today, today + timedelta(days=1)):
-                plan = _daily_plan(experiment.id, created, start, timestamp)
-                if plan:
-                    plans[plan["key"]] = plan
+            if "forecast" in spec["kinds"]:
+                requested_after = max(created, after) if after is not None else created
+                first, _ = next_day(requested_after)
+                if first < retained_from:
+                    omitted.append(
+                        {
+                            "experiment_id": experiment.id,
+                            "from": first.isoformat(),
+                            "before": retained_from.isoformat(),
+                            "target_count": (retained_from - first).days,
+                        }
+                    )
+                cursor = max(first, retained_from)
+                while cursor <= today:
+                    plan = _daily_plan(experiment.id, created, cursor, timestamp)
+                    if plan:
+                        plans[plan["key"]] = plan
+                    cursor += timedelta(days=1)
+                # Current and upcoming decisions never depend on cursor catch-up.
+                for start in (today, today + timedelta(days=1)):
+                    plan = _daily_plan(experiment.id, created, start, timestamp)
+                    if plan:
+                        plans[plan["key"]] = plan
             for plan in _safe_plans(experiment, due):
                 plans[plan["key"]] = plan
         last_truncation = previous_details.get("last_truncation")
@@ -230,6 +337,9 @@ def reconcile(timestamp=None):
         high = max(previous_high, timestamp)
         details = {
             "status": "reconciled",
+            "revision": configuration["revision"],
+            "spec_hash": spec_hash,
+            "scope_changed": scope_changed,
             "policy_version": POLICY_VERSION,
             "timezone": "Asia/Tokyo",
             "observed_at": timestamp.isoformat(),
@@ -255,6 +365,7 @@ def reconcile(timestamp=None):
         state.reconciled_at = high
         state.observed_at = timestamp
         state.details = details
+        _record_runtime(session, configuration, timestamp, decisions=details)
         session.flush()
         return details
 
