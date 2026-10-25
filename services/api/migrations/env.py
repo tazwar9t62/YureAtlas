@@ -1,6 +1,6 @@
 from alembic import context
-from yureatlas.db import Base, engine
 from yureatlas import tables  # noqa: F401
+from yureatlas.db import Base, engine
 
 with engine.connect() as connection:
     context.configure(connection=connection, target_metadata=Base.metadata)
