@@ -59,7 +59,7 @@ Problem: the repository documents a paused checkpoint, but has no active issue/P
 
 Completion gate: documentation links resolve, `git diff --check` passes, and the documentation PR receives the requested clear bot review before merging.
 
-Review access: the initial request received no bot acknowledgement/review, and YureAtlas was absent from the account's Code Review repository search. The owner subsequently confirmed that review access is enabled. A fresh review of the current PR head is required; its completed outcome must be verified before merging or starting T01. The agent did not change account permissions.
+Review access: the initial requests received no bot acknowledgement/review while YureAtlas was absent from the account's Code Review repository search. The owner then explicitly authorized the ChatGPT Codex Connector for only `tazwar9t62/YureAtlas` and completed GitHub's identity confirmation. YureAtlas is now visible in Code Review settings. A fresh review of the current PR head is required; its completed outcome must be verified before merging or starting T01.
 
 ## T01 — Reliable isolated backend checks and CI foundation
 
@@ -206,5 +206,6 @@ Pre-merge acceptance: T01–T10 are verified and merged through the requested re
 | 2026-10-25 | T00 opened as PR #4 with separate issue commits. | Supplementary local review found no blocking issue; clarified T11's pre-merge versus post-merge reporting. GitHub Codex review is still required. |
 | 2026-10-25 | Requested overall Codex review on PR #4 at `1f880c3`; no acknowledgement/review observed. | YureAtlas was absent from the account's Code Review repository search. GitHub app authorization inspection reached owner authentication. User setup requested; task remains unmerged and T01 has not started. |
 | 2026-10-25 | Owner confirmed YureAtlas review access is enabled. | T00 returned to In review; request and verify a fresh review of the updated head before merge. |
+| 2026-10-25 | Completed the owner-authorized YureAtlas-only connector installation and verified the repository appears in Code Review settings. | GitHub identity confirmation was performed by the owner. Request a fresh overall review after this tracker update; no automatic-review or credit-spending preferences were changed. |
 
 Each subsequent task updates this ledger and the task board before its PR. Exact current-head review and merge evidence also lives in the linked GitHub PR/issue to avoid self-referential commit hashes in this file.
