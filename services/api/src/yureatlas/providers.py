@@ -382,103 +382,304 @@ def jma_magnitude(value: str) -> float:
     return int(value) / 10
 
 
-def parse_jma(data: bytes, namespace: str):
-    """Official 96-byte hypocentre format. Namespace identifies a stable source file.
+IMPORT_PARSER_VERSION = 2
+CSV_REQUIRED_FIELDS = frozenset(
+    {"provider_id", "origin_time", "longitude", "latitude", "magnitude", "magnitude_type"}
+)
+CSV_OPTIONAL_FIELDS = frozenset({"provider_updated", "depth_km", "status", "event_type"})
+JMA_OTHER_MAGNITUDE_TYPES = frozenset({"W", "B", "S"})
+# CSV is a canonical import format: other recognized non-earthquakes must
+# explicitly map to non_earthquake instead of being inferred from free text.
+CSV_EVENT_TYPES = frozenset({"earthquake", "explosion", "non_earthquake"})
 
-    JMA has no event ID in this format; stable namespace+line is explicit. A revised
-    file with reordered rows must be imported as a separate catalogue namespace.
+
+def import_report():
+    return {
+        "selected_count": 0,
+        "policy_excluded_count": 0,
+        "invalid_count": 0,
+        "selected": [],
+        "policy_excluded": [],
+        "invalid": [],
+        "reason_counts": {},
+    }
+
+
+def report_import_row(report, outcome, number, code, reason, *, end_line=None):
+    report[outcome + "_count"] += 1
+    report["reason_counts"][code] = report["reason_counts"].get(code, 0) + 1
+    if len(report[outcome]) < 100:
+        report[outcome].append(
+            {"line": number, "end_line": end_line or number, "reason_code": code, "reason": reason}
+        )
+
+
+def finish_import_report(report, records):
+    report.update(
+        accepted=report["selected_count"],
+        retained_corrections=sum(r["_import_outcome"] != "selected" for r in records),
+        rejected_count=report["invalid_count"],
+        rejected=report["invalid"],
+    )
+    return records, report
+
+
+def parse_jma(data: bytes, namespace: str):
+    """Parse documented 96-byte records; unknown data never proves zero events.
+
+    Physical line identity is immutable within a fixed-file namespace. Recognized,
+    structurally valid policy exclusions still provide known-event corrections.
     """
-    accepted, rejected = [], []
-    for number, raw in enumerate(data.splitlines(), 1):
+    records, report = [], import_report()
+    lines = data.splitlines()
+    if not lines:
+        raise ValueError("JMA input is empty")
+    for number, raw in enumerate(lines, 1):
+        code = "invalid_record_width"
         try:
             if len(raw) != 96:
                 raise ValueError("Expected a 96-byte JMA hypocentre record")
+            code = "invalid_encoding"
             line = raw.decode("ascii")
-            selection_reason = (
-                "Not a JMA natural earthquake" if line[0] != "J" or line[60] not in {"1", "2", "5"} else None
-            )
-            if line[59] == "8":
-                selection_reason = selection_reason or "Unaccepted hypocentre"
-            chosen = next(
-                (
-                    (line[a : a + 2], line[a + 2])
-                    for a in (52, 55)
-                    if line[a + 2] in JMA_MAGNITUDE_TYPES and line[a : a + 2].strip()
-                ),
-                None,
-            )
-            if not chosen:
-                selection_reason = selection_reason or "No usable JMA magnitude family; Mw/mb/Ms excluded"
-                chosen = next(
-                    (
-                        (line[a : a + 2], line[a + 2])
-                        for a in (52, 55)
-                        if line[a : a + 2].strip() and line[a + 2].strip()
-                    ),
-                    None,
-                )
-                if not chosen:
-                    raise ValueError("No usable magnitude")
+            issues = []
+            if line[0] not in {"J", "U", "I"}:
+                issues.append(("unknown_agency", "Unknown JMA agency code"))
+            if line[60] not in {"1", "2", "3", "4", "5"}:
+                issues.append(("unknown_event_code", "Unknown JMA subsidiary event code"))
+            if line[59] not in {"1", "2", "3", "4", "5", "7", "8", "9", "M"}:
+                issues.append(("unknown_quality_code", "Unknown JMA hypocentre precision code"))
+            elif line[59] == "8":
+                issues.append(("unaccepted_hypocentre", "Unaccepted hypocentre"))
+            magnitudes = []
+            for offset in (52, 55):
+                value, family = line[offset : offset + 2], line[offset + 2]
+                if not value.strip() and not family.strip():
+                    continue
+                if family not in JMA_MAGNITUDE_TYPES | JMA_OTHER_MAGNITUDE_TYPES:
+                    issues.append(("unknown_magnitude_code", "Unknown or missing magnitude family"))
+                code = "invalid_magnitude"
+                magnitudes.append((jma_magnitude(value), family))
+            chosen = next((m for m in magnitudes if m[1] in JMA_MAGNITUDE_TYPES), None)
+            chosen = chosen or next(iter(magnitudes), None)
+            if chosen is None:
+                code = "missing_magnitude"
+                raise ValueError("No usable magnitude; undetermined magnitude cannot establish absence")
+            code = "invalid_origin_time"
+            seconds = fixed_decimal(line[13:17], 2)
+            if not 0 <= seconds < 60:
+                raise ValueError("Origin seconds must be in [0,60); overflow is not normalized")
             origin = datetime.strptime(line[1:13], "%Y%m%d%H%M").replace(tzinfo=JST) + timedelta(
-                seconds=fixed_decimal(line[13:17], 2)
+                seconds=seconds
             )
-            record = {
-                "provider_id": f"{namespace}:{number}",
-                "origin_time": origin,
-                "provider_updated": None,
-                "latitude": int(line[21:24]) + fixed_decimal(line[24:28], 2) / 60,
-                "longitude": int(line[32:36]) + fixed_decimal(line[36:40], 2) / 60,
-                "depth_km": fixed_decimal(line[44:49], 2) if line[44:49].strip() else None,
-                "magnitude": jma_magnitude(chosen[0]),
-                "magnitude_type": chosen[1],
-                "status": "reviewed",
-                "event_type": "earthquake" if line[60] in {"1", "2", "5"} else "non_earthquake",
-                "selection_reason": selection_reason,
-                "raw": {"line": line, "namespace": namespace, "line_number": number},
-            }
-            accepted.append(validate_record(record))
-            if selection_reason:
-                # Retain valid correction evidence without relaxing the existing
-                # conservative coverage policy; exclusion reporting is separate work.
-                rejected.append({"line": number, "reason": selection_reason})
-        except (ValueError, UnicodeDecodeError, IndexError) as exc:
-            rejected.append({"line": number, "reason": str(exc)})
-    return accepted, {
-        "accepted": sum(r.get("selection_reason") is None for r in accepted),
-        "retained_corrections": sum(r.get("selection_reason") is not None for r in accepted),
-        "rejected_count": len(rejected),
-        "rejected": rejected[:100],
-        "identity_policy": "stable file namespace + line number; reordered files require new namespace",
-    }
+            code = "invalid_coordinates"
+            coordinates = []
+            for degrees, minutes in ((line[21:24], line[24:28]), (line[32:36], line[36:40])):
+                minute = fixed_decimal(minutes, 2)
+                if not 0 <= minute < 60:
+                    raise ValueError("Coordinate minutes must be in [0,60); overflow is not normalized")
+                degree = int(degrees)
+                coordinates.append(
+                    (-1 if degrees.strip().startswith("-") else 1) * (abs(degree) + minute / 60)
+                )
+            code = "invalid_depth"
+            depth = fixed_decimal(line[44:49], 2) if line[44:49].strip() else None
+            if issues:
+                outcome, (reason_code, reason) = "invalid", issues[0]
+            elif line[0] != "J":
+                outcome, reason_code, reason = (
+                    "policy_excluded",
+                    "agency_excluded",
+                    "Not a JMA natural earthquake",
+                )
+            elif line[60] not in {"1", "2", "5"}:
+                outcome, reason_code, reason = (
+                    "policy_excluded",
+                    "event_type_excluded",
+                    "Not a JMA natural earthquake",
+                )
+            elif chosen[1] not in JMA_MAGNITUDE_TYPES:
+                outcome, reason_code, reason = (
+                    "policy_excluded",
+                    "magnitude_family_excluded",
+                    "No usable JMA magnitude family; Mw/mb/Ms excluded",
+                )
+            else:
+                outcome, reason_code, reason = "selected", "selected", "Usable JMA earthquake"
+            code = "invalid_numeric_range"
+            record = validate_record(
+                {
+                    "provider_id": f"{namespace}:{number}",
+                    "origin_time": origin,
+                    "provider_updated": None,
+                    "latitude": coordinates[0],
+                    "longitude": coordinates[1],
+                    "depth_km": depth,
+                    "magnitude": chosen[0],
+                    "magnitude_type": chosen[1],
+                    "status": "reviewed",
+                    "event_type": "earthquake" if line[60] in {"1", "2", "5"} else "non_earthquake",
+                    "selection_reason": None if outcome == "selected" else reason,
+                    "raw": {"line": line, "namespace": namespace, "line_number": number},
+                    "_import_outcome": outcome,
+                    "_import_line": number,
+                }
+            )
+            records.append(record)
+            report_import_row(report, outcome, number, reason_code, reason)
+        except (ValueError, UnicodeDecodeError, IndexError, OverflowError) as exc:
+            report_import_row(report, "invalid", number, code, str(exc))
+    report.update(
+        parser_version=f"jma-v{IMPORT_PARSER_VERSION}",
+        line_count=len(lines),
+        identity_policy=(
+            "immutable file namespace + physical line number; changed or reordered files require a new "
+            "catalogue collection; file namespaces within one collection must have disjoint intervals"
+        ),
+    )
+    return finish_import_report(report, records)
+
+
+def validate_csv_mapping(mapping):
+    if not isinstance(mapping, dict) or any(
+        not isinstance(source, str) or not source.strip() or not isinstance(target, str) or not target.strip()
+        for source, target in mapping.items()
+    ):
+        raise ValueError("CSV mapping must map nonblank source header names to canonical fields")
+    normalized = {source.strip(): target.strip() for source, target in mapping.items()}
+    if len(normalized) != len(mapping):
+        raise ValueError("CSV mapping has duplicate normalized source fields")
+    if len(set(normalized.values())) != len(normalized):
+        raise ValueError("CSV mapping causes destination collisions")
+    if set(normalized.values()) - (CSV_REQUIRED_FIELDS | CSV_OPTIONAL_FIELDS):
+        raise ValueError("CSV mapping has unknown canonical destination fields")
+    return normalized
+
+
+def csv_headers(reader, mapping):
+    try:
+        headers = next(reader)
+    except (StopIteration, csv.Error) as exc:
+        raise ValueError("CSV requires a valid nonempty header row") from exc
+    headers = [name.strip() for name in headers]
+    if not headers or any(not name for name in headers) or len(headers) != len(set(headers)):
+        raise ValueError("CSV headers must be nonblank and unique")
+    mapping = validate_csv_mapping(mapping)
+    if set(mapping) - set(headers):
+        raise ValueError("CSV mapping references unknown source headers")
+    destinations = [mapping.get(name, name) for name in headers]
+    if len(destinations) != len(set(destinations)):
+        raise ValueError("CSV mapping causes destination collisions")
+    if CSV_REQUIRED_FIELDS - set(destinations):
+        raise ValueError(
+            "CSV lacks required canonical fields: "
+            + ", ".join(sorted(CSV_REQUIRED_FIELDS - set(destinations)))
+        )
+    return headers, destinations, mapping
+
+
+def validate_csv_quoting(text):
+    # csv.reader(strict=True) still accepts a quote inside an unquoted field.
+    # Reject that ambiguous syntax instead of silently changing an identity.
+    state = "start"
+    for character in text:
+        if state == "quoted":
+            if character == '"':
+                state = "closed"
+        elif state == "closed":
+            if character == '"':
+                state = "quoted"
+            elif character == "," or character in "\r\n":
+                state = "start"
+            else:
+                raise ValueError("Unexpected characters after a closing CSV quote")
+        elif character == '"':
+            if state != "start":
+                raise ValueError("Quote inside an unquoted CSV field")
+            state = "quoted"
+        elif character == "," or character in "\r\n":
+            state = "start"
+        else:
+            state = "unquoted"
+    if state == "quoted":
+        raise ValueError("Unclosed CSV quote")
 
 
 def parse_csv(data: bytes, mapping: dict | None = None):
-    """Canonical CSV uses UTC-offset ISO timestamps, decimal degrees and km."""
-    mapping = mapping or {}
-    accepted, rejected = [], []
-    for number, raw in enumerate(csv.DictReader(io.StringIO(data.decode("utf-8-sig"))), 2):
+    """Strict canonical CSV, preserving physical line locations and explicit IDs."""
+    records, report = [], import_report()
+    text = data.decode("utf-8-sig")
+    physical_lines = text.splitlines(keepends=True)
+    reader = csv.reader(io.StringIO(text, newline=""), strict=True)
+    headers, destinations, mapping = csv_headers(reader, {} if mapping is None else mapping)
+    validate_csv_quoting("".join(physical_lines[: reader.line_num]))
+    while True:
+        number, code = reader.line_num + 1, "invalid_csv_quoting"
         try:
-            row = {mapping.get(k, k): v for k, v in raw.items()}
-            record = {
-                "provider_id": row["provider_id"],
-                "origin_time": utc(row["origin_time"]),
-                "provider_updated": utc(row["provider_updated"]) if row.get("provider_updated") else None,
-                "longitude": float(row["longitude"]),
-                "latitude": float(row["latitude"]),
-                "depth_km": float(row["depth_km"]) if row.get("depth_km") else None,
-                "magnitude": float(row["magnitude"]),
-                "magnitude_type": row["magnitude_type"],
-                "status": row.get("status") or "reviewed",
-                "event_type": row.get("event_type") or "earthquake",
-                "raw": raw,
-            }
-            accepted.append(validate_record(record))
-        except (KeyError, ValueError, TypeError) as exc:
-            rejected.append({"line": number, "reason": str(exc)})
-    return accepted, {
-        "accepted": len(accepted),
-        "rejected_count": len(rejected),
-        "rejected": rejected[:100],
-        "mapping": mapping,
-        "units": "decimal degrees, depth km, timezone-aware ISO8601",
-    }
+            values = next(reader)
+        except StopIteration:
+            break
+        except csv.Error as exc:
+            report_import_row(report, "invalid", number, code, str(exc), end_line=reader.line_num)
+            break  # The remaining quoted record has no trustworthy row boundary.
+        try:
+            validate_csv_quoting("".join(physical_lines[number - 1 : reader.line_num]))
+            code = "invalid_row_width"
+            if len(values) != len(headers):
+                raise ValueError(f"Expected {len(headers)} fields; found {len(values)}")
+            raw = dict(zip(headers, values, strict=True))
+            row = dict(zip(destinations, values, strict=True))
+            code = "invalid_identity"
+            identity = row["provider_id"]
+            if not identity or identity != identity.strip():
+                raise ValueError("provider_id must be an explicit nonblank ID without surrounding whitespace")
+            code = "invalid_status"
+            status = row.get("status") or "reviewed"
+            if status not in {"reviewed", "automatic", "deleted"}:
+                raise ValueError("Unknown review status")
+            code = "invalid_origin_time"
+            origin = utc(row["origin_time"])
+            code = "invalid_provider_updated"
+            updated = utc(row["provider_updated"]) if row.get("provider_updated") else None
+            code = "invalid_numeric_fields"
+            record = validate_record(
+                {
+                    "provider_id": identity,
+                    "origin_time": origin,
+                    "provider_updated": updated,
+                    "longitude": float(row["longitude"]),
+                    "latitude": float(row["latitude"]),
+                    "depth_km": float(row["depth_km"]) if row.get("depth_km") else None,
+                    "magnitude": float(row["magnitude"]),
+                    "magnitude_type": row["magnitude_type"],
+                    "status": status,
+                    "event_type": row.get("event_type") or "earthquake",
+                    "raw": raw,
+                    "_import_line": number,
+                    "_import_end_line": reader.line_num,
+                }
+            )
+            if record["event_type"] not in CSV_EVENT_TYPES:
+                outcome, reason_code, reason = (
+                    "invalid",
+                    "unknown_event_type",
+                    "Unrecognized event_type; use earthquake, explosion, or non_earthquake",
+                )
+                # Retain explicit identity and usable fields for known corrections,
+                # while neither selecting this row nor asserting complete coverage.
+                record["selection_reason"] = reason
+            else:
+                outcome, reason_code, reason = "selected", "selected", "Usable canonical CSV row"
+            record["_import_outcome"] = outcome
+            records.append(record)
+            report_import_row(report, outcome, number, reason_code, reason, end_line=reader.line_num)
+        except (KeyError, ValueError, TypeError, OverflowError) as exc:
+            report_import_row(report, "invalid", number, code, str(exc), end_line=reader.line_num)
+    report.update(
+        parser_version=f"csv-v{IMPORT_PARSER_VERSION}",
+        line_count=len(data.splitlines()),
+        data_row_count=sum(report[key + "_count"] for key in ("selected", "policy_excluded", "invalid")),
+        mapping=mapping,
+        units="decimal degrees, depth km, timezone-aware ISO8601",
+        event_types=sorted(CSV_EVENT_TYPES),
+    )
+    return finish_import_report(report, records)

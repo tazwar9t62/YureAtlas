@@ -12,6 +12,7 @@ from yureatlas import ingestion, providers
 from yureatlas.artifacts import read
 from yureatlas.catalogue import ensure_experiment, ingest_records
 from yureatlas.config import settings
+from yureatlas.eligibility import eligible_cell
 from yureatlas.grid import StudyGrid
 from yureatlas.jobs import Cancelled
 from yureatlas.providers import USGS, RetrievalBudgetExceeded
@@ -196,7 +197,13 @@ def ingest_environment(monkeypatch):
         state.order.append("known")
         return state.known[:], state.overflow
 
-    def persist(source, records, start, end, report, *, status, received_at=None):
+    def persist(source, records, start, end, report, *, status, received_at=None, discovery_context=None):
+        if discovery_context is not None:
+            records = [
+                r
+                for r in records
+                if r["provider_id"] in state.known or eligible_cell(r, grid, CONFIG) is not None
+            ]
         state.order.append(report.get("phase", "supplement"))
         state.receipts.append(
             {
@@ -208,11 +215,14 @@ def ingest_environment(monkeypatch):
                 "received_at": received_at,
             }
         )
-        return {"added": len(records), "duplicate": 0}
+        return {
+            "added": len(records),
+            "duplicate": 0,
+            "persisted_provider_ids": [r["provider_id"] for r in records],
+        }
 
     monkeypatch.setattr(ingestion, "known_ids_for_interval", capture)
     monkeypatch.setattr(ingestion, "ingest_records", persist)
-    monkeypatch.setattr(ingestion, "discovery_and_corrections", lambda source, records, *args: records)
     return state
 
 
@@ -573,3 +583,25 @@ def test_known_id_capture_includes_historical_positions_and_deletions_with_bound
     )
     assert ingestion.known_ids_for_interval(experiment.source_id, START, END) == (["deleted", "moved"], False)
     assert ingestion.known_ids_for_interval(experiment.source_id, START, END, limit=1) == (["deleted"], True)
+
+
+def test_unselected_feed_events_do_not_pollute_required_reconciliation_ids(
+    provider_factory, ingest_environment, monkeypatch
+):
+    state = ingest_environment
+
+    def handler(request):
+        if "summary/" in request.url.path:
+            outside = feature("unrelated")
+            outside["geometry"]["coordinates"][0] = 150
+            return httpx.Response(200, json=collection(outside))
+        if request.url.path.endswith("/count"):
+            return httpx.Response(200, json={"count": 0})
+        assert "eventid" not in request.url.params
+        return httpx.Response(204)
+
+    provider = provider_factory(handler)
+    wire_provider(monkeypatch, provider)
+    assert ingestion.ingest_usgs("experiment", START, END, use_feed=True)["status"] == "complete"
+    assert provider.id_requests == 0
+    assert not any(receipt["records"] for receipt in state.receipts)

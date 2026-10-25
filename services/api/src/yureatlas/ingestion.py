@@ -4,7 +4,7 @@ from datetime import timedelta
 import httpx
 from sqlalchemy import select
 
-from .catalogue import discovery_and_corrections, ensure_experiment, ingest_records, load_experiment
+from .catalogue import ensure_experiment, ingest_records, load_experiment
 from .db import transaction
 from .jobs import Cancelled
 from .providers import USGS, RetrievalBudgetExceeded
@@ -56,12 +56,25 @@ def ingest_usgs(experiment_id, start, end, progress=lambda p: None, use_feed=Fal
         "failed_ids": 0,
     }
 
-    def persist(records, a, b, report, *, status="partial", received_at=None):
+    def persist(
+        records, a, b, report, *, status="partial", received_at=None, discover=False, capture_ids=False
+    ):
+        selection = (
+            {"grid": grid, "config": experiment.config, "capture_ids": capture_ids} if discover else None
+        )
         result = ingest_records(
-            experiment.source_id, records, a, b, report, status=status, received_at=received_at
+            experiment.source_id,
+            records,
+            a,
+            b,
+            report,
+            status=status,
+            received_at=received_at,
+            discovery_context=selection,
         )
         totals["added"] += result["added"]
         totals["duplicate"] += result["duplicate"]
+        return result
 
     cursor = start
     try:
@@ -108,21 +121,24 @@ def ingest_usgs(experiment_id, start, end, progress=lambda p: None, use_feed=Fal
                             status="failed",
                         )
                     else:
-                        records = discovery_and_corrections(
-                            experiment.source_id, records, grid, experiment.config
-                        )
-                        persist(
+                        persisted = persist(
                             records,
                             cursor,
                             chunk_end,
                             dict(report, coverage_effect="supplement"),
                             received_at=utc(report["received_at"]),
+                            discover=True,
+                            capture_ids=True,
                         )
+                        retained_ids = set(persisted["persisted_provider_ids"])
                         # Newly persisted feed events can also become stale before
                         # discovery. Include in-interval IDs, without claiming that
                         # a feed resolved them or growing the bounded working set.
                         for record in records:
-                            if cursor <= record["origin_time"] < chunk_end:
+                            if (
+                                record["provider_id"] in retained_ids
+                                and cursor <= record["origin_time"] < chunk_end
+                            ):
                                 identity = record["provider_id"]
                                 if identity in known or len(known) < KNOWN_ID_LIMIT:
                                     known.add(identity)
@@ -136,15 +152,13 @@ def ingest_usgs(experiment_id, start, end, progress=lambda p: None, use_feed=Fal
                         raise ValueError("Discovery intervals are incomplete, overlapping, or out of order")
                     rejected += report["rejected_count"]
                     resolved.update(r["provider_id"] for r in records if r["provider_id"] in known)
-                    records = discovery_and_corrections(
-                        experiment.source_id, records, grid, experiment.config
-                    )
                     persist(
                         records,
                         a,
                         b,
                         dict(report, coverage_effect="supplement"),
                         received_at=utc(report["received_at"]),
+                        discover=True,
                     )
                     retrieved_to = b
                     fraction = float(((cursor - start) + (b - cursor) * 0.7) / (end - start))

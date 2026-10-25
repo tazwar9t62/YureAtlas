@@ -1223,18 +1223,48 @@ function Operations({
   const [historyStart, setHistoryStart] = useState("2015-01-01");
   const [importStart, setImportStart] = useState("2023-01-01"),
     [importEnd, setImportEnd] = useState("2024-01-01"),
+    [catalogueNamespace, setCatalogueNamespace] = useState("jma_main"),
     [namespace, setNamespace] = useState("h2023"),
     [format, setFormat] = useState("jma"),
-    [file, setFile] = useState<File | null>(null);
+    [file, setFile] = useState<File | null>(null),
+    [coverageDeclared, setCoverageDeclared] = useState(false),
+    [uploading, setUploading] = useState(false);
+  useEffect(() => {
+    setCatalogueNamespace(
+      experiment?.config.provider === "jma" &&
+        typeof experiment.config.catalogue_namespace === "string"
+        ? experiment.config.catalogue_namespace
+        : "jma_main",
+    );
+    setCoverageDeclared(false);
+  }, [experiment?.id]);
+  useEffect(() => {
+    setCoverageDeclared(false);
+  }, [catalogueNamespace, namespace, format, file, importStart, importEnd]);
+  const validCollection = /^[a-z0-9][a-z0-9_-]{2,79}$/.test(catalogueNamespace);
+  const reuseExperiment =
+    experiment?.config.provider === "jma" &&
+    experiment.config.catalogue_namespace === catalogueNamespace;
   async function upload() {
-    if (!file) return;
+    if (!file || !validCollection || !namespace || uploading) return;
+    setUploading(true);
     try {
+      const collectionHash = Array.from(
+        new Uint8Array(
+          await crypto.subtle.digest(
+            "SHA-256",
+            new TextEncoder().encode(catalogueNamespace),
+          ),
+        ),
+        (byte) => byte.toString(16).padStart(2, "0"),
+      ).join("");
       const exp =
-        experiment?.config.provider === "jma"
+        reuseExperiment && experiment
           ? experiment
           : await request<Experiment>("/experiments", {
-              name: `jma_mj4_${namespace.replace(/[^a-z0-9_]/g, "_")}_v1`,
+              name: `jma_collection_${catalogueNamespace.slice(0, 48)}_${collectionHash.slice(0, 12)}`,
               provider: "jma",
+              catalogue_namespace: catalogueNamespace,
             });
       const form = new FormData();
       form.set("experiment_id", exp.id);
@@ -1242,6 +1272,8 @@ function Operations({
       form.set("end", `${importEnd}T00:00:00+09:00`);
       form.set("namespace", namespace);
       form.set("format", format);
+      form.set("coverage_declared", String(coverageDeclared));
+      form.set("submission_id", crypto.randomUUID());
       form.set("file", file);
       const response = await fetch("/api/imports", {
         method: "POST",
@@ -1253,6 +1285,8 @@ function Operations({
       onRefresh();
     } catch (e) {
       onError((e as Error).message);
+    } finally {
+      setUploading(false);
     }
   }
   return (
@@ -1418,9 +1452,9 @@ function Operations({
           </span>
         </div>
         <p className="panel-note">
-          JMA data remain separate. Provide the uncompressed file and its
-          coverage interval. Stable namespace + line number identifies official
-          records.
+          {format === "jma"
+            ? "Use one collection for successive files from the same catalogue release. A revised or reordered official file needs a new collection."
+            : "Use a CSV collection with stable event IDs so later imports can record corrections. Keep it separate from official fixed-width collections."}
         </p>
         <div className="import-fields">
           <label>
@@ -1431,9 +1465,28 @@ function Operations({
             </select>
           </label>
           <label>
+            Catalogue collection
+            <input
+              aria-label="Catalogue collection"
+              aria-describedby="catalogue-collection-help"
+              value={catalogueNamespace}
+              maxLength={80}
+              pattern={"[a-z0-9][a-z0-9_\\-]{2,79}"}
+              onChange={(e) => setCatalogueNamespace(e.target.value)}
+            />
+            <small id="catalogue-collection-help">
+              3–80 lowercase letters, numbers, underscores or hyphens. Start
+              with a letter or number.
+              {reuseExperiment
+                ? " Uses the selected experiment."
+                : " Uses an experiment for this collection."}
+            </small>
+          </label>
+          <label>
             File namespace
             <input
               value={namespace}
+              maxLength={80}
               onChange={(e) => setNamespace(e.target.value)}
             />
           </label>
@@ -1453,6 +1506,28 @@ function Operations({
               onChange={(e) => setImportEnd(e.target.value)}
             />
           </label>
+          <label
+            style={{
+              gridColumn: "1 / -1",
+              flexDirection: "row",
+              alignItems: "flex-start",
+            }}
+          >
+            <input
+              type="checkbox"
+              aria-label="Declare complete catalogue coverage"
+              checked={coverageDeclared}
+              onChange={(e) => setCoverageDeclared(e.target.checked)}
+            />
+            <span>
+              I confirm this file contains the complete catalogue for the
+              selected interval.
+              <small style={{ display: "block", marginTop: 4 }}>
+                Leave unchecked to import records with unknown coverage. They
+                cannot establish quiet cells for scoring.
+              </small>
+            </span>
+          </label>
           <label>
             Uncompressed file · max 32 MiB
             <input
@@ -1462,10 +1537,18 @@ function Operations({
           </label>
           <button
             className="secondary"
-            disabled={!file || !namespace}
+            disabled={
+              !file ||
+              !namespace ||
+              !validCollection ||
+              !importStart ||
+              !importEnd ||
+              importStart >= importEnd ||
+              uploading
+            }
             onClick={upload}
           >
-            Validate & import
+            {uploading ? "Submitting import…" : "Validate & import"}
           </button>
         </div>
       </section>

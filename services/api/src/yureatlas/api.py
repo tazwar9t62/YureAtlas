@@ -1,3 +1,4 @@
+import json
 from datetime import timedelta
 from itertools import pairwise
 
@@ -531,32 +532,51 @@ def metrics(experiment_id: str, mode: str, days: int = Query(30, ge=0, le=3650))
         }
 
 
+def unique_mapping_object(pairs):
+    if len(dict(pairs)) != len(pairs):
+        raise ValueError("CSV mapping contains duplicate source column names")
+    return dict(pairs)
+
+
 @app.post("/imports", response_model=JobView, status_code=202)
 async def import_file(
     experiment_id: str = Form(...),
     start: str = Form(...),
     end: str = Form(...),
-    namespace: str = Form(...),
+    namespace: str = Form(..., min_length=1, max_length=80),
     format: str = Form("jma"),
+    mapping: str = Form("{}", max_length=8192),
+    coverage_declared: bool = Form(False),
+    submission_id: str = Form("", max_length=80, pattern=r"^[A-Za-z0-9_-]*$"),
     file: UploadFile = File(...),
 ):
-    from .artifacts import put
+    from .artifacts import digest, put
     from .jobs import enqueue
+    from .providers import IMPORT_PARSER_VERSION, validate_csv_mapping
     from .timeutil import utc
 
-    if format not in {"jma", "csv"} or not namespace or len(namespace) > 80:
+    if format not in {"jma", "csv"} or not namespace.strip() or namespace != namespace.strip():
         raise HTTPException(422, "Use jma/csv format and a short stable file namespace")
+    columns = validate_csv_mapping(json.loads(mapping, object_pairs_hook=unique_mapping_object))
+    if format != "csv" and columns:
+        raise HTTPException(422, "Column mapping is only supported for CSV imports")
     a, b = utc(start), utc(end)
-    if not a < b <= t.now():
-        raise HTTPException(422, "Declare the completed catalogue coverage interval")
-    raw = await file.read(32 * 1024 * 1024 + 1)
-    if len(raw) > 32 * 1024 * 1024:
-        raise HTTPException(413, "Maximum uncompressed file size is 32 MiB")
-    ref = put(raw, "txt")
+    if not a < b <= t.now() or b - a > timedelta(days=366 * 30):
+        raise HTTPException(422, "Select a completed catalogue interval of at most 30 years")
     with transaction() as s:
         experiment = s.get(t.Experiment, experiment_id)
         if not experiment or experiment.config["provider"] != "jma":
             raise HTTPException(422, "Select a separate JMA experiment first")
+        if not experiment.config.get("catalogue_namespace"):
+            raise HTTPException(
+                422, "Choose a JMA catalogue collection before importing; legacy archives remain readable"
+            )
+    raw = await file.read(32 * 1024 * 1024 + 1)
+    if len(raw) > 32 * 1024 * 1024:
+        raise HTTPException(413, "Maximum uncompressed file size is 32 MiB")
+    if not raw:
+        raise HTTPException(422, "Upload a nonempty catalogue file")
+    ref = put(raw, "txt")
     payload = {
         "experiment_id": experiment_id,
         "start": a.isoformat(),
@@ -564,8 +584,22 @@ async def import_file(
         "namespace": namespace,
         "format": format,
         "artifact": ref,
+        "mapping": columns,
+        "parser_version": f"{format}-v{IMPORT_PARSER_VERSION}",
+        "coverage_declared": coverage_declared,
+        "submission_id": submission_id,
     }
-    return view(enqueue("import", payload, f"import:{experiment_id}:{namespace}:{ref}"), JobView)
+    # Identical requests (including an optional retry token) share one job. A new
+    # token permits an explicit retry of a failed job; the import manifest still
+    # deduplicates a previously committed file and declaration.
+    key = "import:v2:" + digest(
+        {
+            "source_id": experiment.source_id,
+            "experiment_config_hash": experiment.config_hash,
+            "request": payload,
+        }
+    )
+    return view(enqueue("import", payload, key), JobView)
 
 
 @app.get("/exports/forecasts/{forecast_id}")

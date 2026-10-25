@@ -3,7 +3,7 @@ from datetime import timedelta
 from sqlalchemy import select
 
 from .archive import evaluate_forecast, issue_forecast
-from .catalogue import discovery_and_corrections, ingest_records, load_experiment
+from .catalogue import ingest_records, load_experiment
 from .db import transaction
 from .demo import DEMO_TEST_START, seed_catalogue
 from .ingestion import ingest_usgs, real_experiment
@@ -77,7 +77,13 @@ def execute(kind, payload, progress):
         )
     if kind == "import":
         from .artifacts import read
-        from .providers import parse_csv, parse_jma
+        from .providers import IMPORT_PARSER_VERSION, parse_csv, parse_jma
+
+        if payload["format"] not in {"jma", "csv"}:
+            raise ValueError("Unknown import format")
+        parser_version = f"{payload['format']}-v{IMPORT_PARSER_VERSION}"
+        if payload.get("parser_version", parser_version) != parser_version:
+            raise ValueError("Queued import parser version differs from the running parser")
 
         experiment, grid = load_experiment(payload["experiment_id"])
         if experiment.config["provider"] != "jma":
@@ -88,25 +94,86 @@ def execute(kind, payload, progress):
             if payload["format"] == "jma"
             else parse_csv(raw, payload.get("mapping"))
         )
-        from .eligibility import eligible_cell
+        from .eligibility import JMA_MAGNITUDE_TYPES
+        from .providers import JMA_OTHER_MAGNITUDE_TYPES, finish_import_report, report_import_row
 
-        report["selected_in_domain"] = sum(
-            eligible_cell(r, grid, experiment.config) is not None for r in rows
-        )
-        rows = discovery_and_corrections(experiment.source_id, rows, grid, experiment.config)
-        report["persisted_candidates"] = len(rows)
+        start, end = utc(payload["start"]), utc(payload["end"])
+        if start >= end or end > now():
+            raise ValueError("Import requires a completed ordered interval")
+        exclusions = {}
+        for record in rows:
+            if record["_import_outcome"] != "selected":
+                continue
+            outcome = "policy_excluded"
+            if record["status"] == "deleted":
+                code, reason = "deleted", "Deleted event correction"
+            elif record["event_type"] != "earthquake":
+                code, reason = "event_type_excluded", "Non-earthquake event correction"
+            elif record["magnitude_type"] not in JMA_MAGNITUDE_TYPES:
+                code, reason = "magnitude_family_excluded", "Non-JMA magnitude family"
+                if record["magnitude_type"] not in JMA_OTHER_MAGNITUDE_TYPES:
+                    outcome, code, reason = (
+                        "invalid",
+                        "unknown_magnitude_code",
+                        "Unknown JMA magnitude family",
+                    )
+            elif not start <= record["origin_time"] < end:
+                code, reason = (
+                    "outside_declared_interval",
+                    "Origin is outside the declared half-open interval",
+                )
+            elif record["magnitude"] < experiment.config["input_magnitude"]:
+                code, reason = "below_input_magnitude", "Magnitude is below the experiment input threshold"
+            elif grid.assign(record["longitude"], record["latitude"]) is None:
+                code, reason = "outside_domain", "Origin is outside the experiment domain"
+            else:
+                continue
+            report["selected_count"] -= 1
+            report["reason_counts"]["selected"] -= 1
+            report["selected"] = [r for r in report["selected"] if r["line"] != record["_import_line"]]
+            report_import_row(
+                report,
+                outcome,
+                record["_import_line"],
+                code,
+                reason,
+                end_line=record.get("_import_end_line"),
+            )
+            record["_import_outcome"] = outcome
+            exclusions[code] = exclusions.get(code, 0) + 1
+        rows, report = finish_import_report(report, rows)
+        report["selected_in_domain"] = report["selected_count"]
+        report["selection_exclusions"] = exclusions
         report["raw_ref"] = payload["artifact"]
+        declared = payload.get("coverage_declared", False)
+        if not isinstance(declared, bool):
+            raise ValueError("coverage_declared must be a boolean")
+        report["coverage_declared"] = declared
+        report["coverage_effect"] = "authoritative"
         report["coverage_policy"] = (
-            "User-declared official file interval; rejected rows prevent negative labels"
+            "Complete only with explicit interval coverage declaration and no invalid/ambiguous rows; "
+            "recognized policy exclusions are not missing catalogue data"
         )
         return ingest_records(
             experiment.source_id,
             rows,
-            utc(payload["start"]),
-            utc(payload["end"]),
+            start,
+            end,
             report,
-            status="complete" if not report["rejected_count"] else "partial",
+            status="complete" if declared and not report["rejected_count"] else "partial",
+            discovery_context={"grid": grid, "config": experiment.config, "discovery_interval": (start, end)},
+            import_identity={
+                "namespace": payload["namespace"],
+                "format": payload["format"],
+                "artifact": payload["artifact"],
+                "line_count": report["line_count"],
+                "mapping": report.get("mapping", {}),
+                "parser_version": report["parser_version"],
+                "coverage_declared": declared,
+                "catalogue_namespace": experiment.config.get("catalogue_namespace"),
+            },
         )
+
     experiment_id = payload.get("experiment_id")
     if kind == "ingest":
         experiment_id = experiment_id or real_experiment().id

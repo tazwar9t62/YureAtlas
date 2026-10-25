@@ -1185,12 +1185,32 @@
           },
           "namespace": {
             "type": "string",
+            "maxLength": 80,
+            "minLength": 1,
             "title": "Namespace"
           },
           "format": {
             "type": "string",
             "title": "Format",
             "default": "jma"
+          },
+          "mapping": {
+            "type": "string",
+            "maxLength": 8192,
+            "title": "Mapping",
+            "default": "{}"
+          },
+          "coverage_declared": {
+            "type": "boolean",
+            "title": "Coverage Declared",
+            "default": false
+          },
+          "submission_id": {
+            "type": "string",
+            "maxLength": 80,
+            "pattern": "^[A-Za-z0-9_-]*$",
+            "title": "Submission Id",
+            "default": ""
           },
           "file": {
             "type": "string",
@@ -1270,6 +1290,20 @@
             ],
             "title": "Provider",
             "default": "usgs"
+          },
+          "catalogue_namespace": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 80,
+                "minLength": 3,
+                "pattern": "^[a-z0-9][a-z0-9_-]{2,79}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Catalogue Namespace"
           },
           "target_magnitude": {
             "type": "number",

@@ -118,7 +118,7 @@ def test_discovery_and_correction_in_one_delivery_preserve_both_versions(grid, k
     assert discovery_and_corrections("source", [first, correction], grid, CONFIG) == [first, correction]
 
 
-def test_local_csv_import_passes_known_downgrade_to_persistence(grid, known_lookup, monkeypatch):
+def test_local_csv_import_preserves_all_candidates_until_locked_persistence(grid, known_lookup, monkeypatch):
     raw = (
         b"provider_id,origin_time,longitude,latitude,depth_km,magnitude,magnitude_type\n"
         b"known,2020-01-01T00:00:00Z,140.5,35.5,,2.8,J\n"
@@ -143,7 +143,7 @@ def test_local_csv_import_passes_known_downgrade_to_persistence(grid, known_look
         },
         lambda _: None,
     )
-    assert [r["provider_id"] for r in persisted] == ["known", "new"]
+    assert [r["provider_id"] for r in persisted] == ["known", "foreign", "new"]
     assert persisted[0]["magnitude"] == 2.8
 
 
@@ -170,19 +170,26 @@ def test_feed_keeps_known_reclassification_without_discovering_explosions(grid, 
     )
     monkeypatch.setattr(ingestion, "known_ids_for_interval", lambda *a: ([], False))
     persisted = []
-    monkeypatch.setattr(
-        ingestion,
-        "ingest_records",
-        lambda source, records, *a, **kw: (
-            persisted.extend(records) or {"added": len(records), "duplicate": 0}
-        ),
-    )
+
+    def persist(source, records, *args, discovery_context=None, **kwargs):
+        if discovery_context is not None:
+            records = discovery_and_corrections(
+                source, records, discovery_context["grid"], discovery_context["config"]
+            )
+        persisted.extend(records)
+        return {
+            "added": len(records),
+            "duplicate": 0,
+            "persisted_provider_ids": [r["provider_id"] for r in records],
+        }
+
+    monkeypatch.setattr(ingestion, "ingest_records", persist)
     ingestion.ingest_usgs("experiment", START, START + timedelta(days=1), use_feed=True)
     assert persisted == [rows[0], rows[0]]  # Feed evidence and authoritative ID correction.
 
 
 @pytest.mark.parametrize("change", ["agency", "event_type", "magnitude_type", "hypocentre"])
-def test_jma_retains_valid_excluded_correction_without_relaxing_coverage(grid, change):
+def test_jma_retains_excluded_corrections_and_distinguishes_ambiguity(grid, change):
     original = Path(__file__).with_name("fixtures").joinpath("jma_2023_first.txt").read_bytes().strip()
     line = list(original.decode())
     if change == "agency":
@@ -192,12 +199,13 @@ def test_jma_retains_valid_excluded_correction_without_relaxing_coverage(grid, c
     elif change == "hypocentre":
         line[59] = "8"
     else:
-        line[54], line[57] = "M", "M"
+        line[54] = "W"
     rows, report = parse_jma("".join(line).encode(), "stable")
     assert len(rows) == 1
     assert rows[0]["provider_id"] == "stable:1"
     assert rows[0]["selection_reason"]
-    assert report["rejected_count"] == 1  # T02.3 will separately classify safe exclusions.
+    assert report["rejected_count"] == int(change == "hypocentre")
+    assert report["policy_excluded_count"] == int(change != "hypocentre")
     assert report["retained_corrections"] == 1
     assert eligible_cell(rows[0], grid, CONFIG, minimum=0) is None
 
