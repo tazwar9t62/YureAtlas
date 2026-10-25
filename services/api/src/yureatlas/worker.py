@@ -71,16 +71,20 @@ def main():
             raise RuntimeError("A YureAtlas worker is already running")
         from .scheduling import start_scheduler
 
-        start_scheduler()
-        while True:
-            with transaction() as s:
-                s.execute(
-                    insert(WorkerState)
-                    .values(id="scheduler", heartbeat=now(), details={})
-                    .on_conflict_do_update(index_elements=[WorkerState.id], set_={"heartbeat": now()})
-                )
-            if not run_once():
-                time.sleep(1)
+        scheduler = start_scheduler()
+        try:
+            while True:
+                with transaction() as s:
+                    s.execute(
+                        insert(WorkerState)
+                        .values(id="scheduler", heartbeat=now(), details={})
+                        .on_conflict_do_update(index_elements=[WorkerState.id], set_={"heartbeat": now()})
+                    )
+                if not run_once():
+                    time.sleep(1)
+        finally:
+            if scheduler is not None:
+                scheduler.shutdown(wait=True)
 
 
 if __name__ == "__main__":

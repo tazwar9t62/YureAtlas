@@ -145,8 +145,8 @@ Problem: restarting after 23:40 but before midnight skips a still-eligible daily
 
 | Smaller issue | Status / evidence |
 | --- | --- |
-| T05.1 [#32](https://github.com/tazwar9t62/YureAtlas/issues/32): eligible daily restart recovery | Implemented: 556 unit + all 116 PostGIS tests, lint/types/contracts passed |
-| T05.2 [#33](https://github.com/tazwar9t62/YureAtlas/issues/33): durable live reconciliation | Planned |
+| T05.1 [#32](https://github.com/tazwar9t62/YureAtlas/issues/32): eligible daily restart recovery | Implemented in `028ac7a`: 556 unit + all 116 PostGIS tests, lint/types/contracts passed |
+| T05.2 [#33](https://github.com/tazwar9t62/YureAtlas/issues/33): durable live reconciliation | Implemented: 577 unit + all 126 PostGIS tests, populated migrations, lint/types/contracts passed |
 | T05.3a [#34](https://github.com/tazwar9t62/YureAtlas/issues/34): ownership and cancellation | Planned |
 | T05.3b [#35](https://github.com/tazwar9t62/YureAtlas/issues/35): stable forecast execution and retry identity | Planned |
 | T05.4 [#36](https://github.com/tazwar9t62/YureAtlas/issues/36): persisted schedules and promotion state | Planned |
@@ -288,3 +288,5 @@ T04 opened as [PR #30](https://github.com/tazwar9t62/YureAtlas/pull/30) with sep
 T04 subsequently cleared the exact-head review and CI recorded above and merged as `54e0dd5527f76a66b16365697c031670956b4c7b`. T05 starts from that updated main on `fix/worker-recovery`; parent #31 and smaller issues #32–#37 were created before implementation. The original ownership/retry item is split into two focused commits because lease/cancellation fencing and stable execution resolution protect different failure boundaries. T05.1 starts with eligible restart decisions and atomic missed insertion; later smaller issues remain planned.
 
 T05.1 recovers the upcoming daily target during the half-open 23:40–00:00 JST publication interval and inserts absent expired targets directly as missed. Canonical UTC keys and conflict-safe insertion preserve every existing job state; disabled scheduling performs no automatic work. The 20 new unit and nine new PostGIS cases cover boundary/offset validation, real startup behavior, synthetic exclusion, repeated/concurrent triggers and an uncommitted queued winner. Verification passed 556 unit and all 116 PostGIS tests, lint, TypeScript, contracts and independent review. No schema or API contract changed. Live misfire reconciliation remains the next smaller issue.
+
+T05.2 replaces delivery-dependent cron callbacks with a monotonic 30-second reconciliation timer and separate durable scheduler state. The default clock is sampled after the planner lock; bounded job inserts and state advancement commit together. Latest-due safe work uses canonical pinned intervals; the reconciliation job refreshes USGS before evaluation, while JMA remains offline. Recovery records at most 31 expired daily targets per experiment, retains older omitted-interval diagnostics, and refuses more than 100 real experiments without partial state. Controlled clocks, real transaction failures/concurrency and actual timer threads verify these policies. Verification passed 577 unit and all 126 PostGIS tests, populated002→006→head preservation, lint, TypeScript, contracts and independent review. Ownership/cancellation and retry resolution remain the next two issues.

@@ -1,7 +1,6 @@
 """Daily restart decisions; database cases require the owned PostGIS harness."""
 
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
 from datetime import timedelta
 from threading import Barrier
 from threading import Event as ThreadEvent
@@ -16,7 +15,7 @@ from yureatlas.artifacts import canonical
 from yureatlas.catalogue import ensure_experiment
 from yureatlas.db import engine, transaction
 from yureatlas.schemas import ExperimentSpec
-from yureatlas.tables import Job
+from yureatlas.tables import Experiment, Job
 from yureatlas.timeutil import JST, next_day, utc
 
 TARGET = utc("2025-01-01T00:00:00+09:00")
@@ -122,7 +121,7 @@ def test_disabled_schedule_never_reads_or_writes_operational_state(monkeypatch, 
         "real_experiments",
         "enqueue",
         "enqueue_missed",
-        "BackgroundScheduler",
+        "ReconciliationWatchdog",
         "now",
     ):
         monkeypatch.setattr(scheduling, name, forbidden)
@@ -130,45 +129,6 @@ def test_disabled_schedule_never_reads_or_writes_operational_state(monkeypatch, 
         assert scheduling.daily_forecast_decision("experiment", CREATED, TARGET, TARGET) is None
     else:
         assert getattr(scheduling, entrypoint)() is None
-
-
-def test_startup_uses_one_captured_instant_for_safe_catchup_and_upcoming_decision(
-    monkeypatch, captured_decisions
-):
-    timestamp = TARGET - timedelta(minutes=15)
-    experiments = [
-        SimpleNamespace(id="jma", created_at=CREATED, config={"provider": "jma"}),
-        SimpleNamespace(id="usgs", created_at=CREATED, config={"provider": "usgs"}),
-    ]
-
-    @contextmanager
-    def previous_heartbeat():
-        yield SimpleNamespace(get=lambda *_: SimpleNamespace(heartbeat=timestamp - timedelta(minutes=1)))
-
-    monkeypatch.setattr(scheduling, "transaction", previous_heartbeat)
-    monkeypatch.setattr(scheduling, "real_experiments", lambda: experiments)
-    monkeypatch.setattr(scheduling, "now", lambda: pytest.fail("Captured startup instant was discarded"))
-    scheduling.reconcile_startup(timestamp.astimezone(ZoneInfo("America/Los_Angeles")))
-    upcoming = [
-        row
-        for row in captured_decisions
-        if row.kind == "forecast" and row.payload["start"] == TARGET.isoformat()
-    ]
-    assert {row.payload["experiment_id"] for row in upcoming} == {"jma", "usgs"}
-    assert all(row.status == "queued" for row in upcoming)
-    ingestions = [row for row in captured_decisions if row.kind == "ingest"]
-    assert len(ingestions) == 2
-    assert {row.payload["experiment_id"] for row in ingestions} == {"usgs"}
-    assert {utc(row.payload["end"]) for row in ingestions} == {timestamp}
-    assert {timestamp - utc(row.payload["start"]) for row in ingestions} == {
-        timedelta(days=2),
-        timedelta(days=31),
-    }
-    evaluations = [row for row in captured_decisions if row.kind == "evaluate"]
-    assert {row.logical_key for row in evaluations} == {
-        "reconcile:jma:2024-12-31",
-        "reconcile:usgs:2024-12-31",
-    }
 
 
 @pytest.fixture
@@ -187,11 +147,22 @@ def owned_experiments(monkeypatch):
                 north=36,
             )
         )
-    # Preserve the real synthetic filter while avoiding work on other tests'
-    # experiments. No installation-wide WorkerState row is changed.
+    # Scope SQL before the production synthetic filter/limit; other test cases
+    # may have created more than the installation's automatic scheduling cap.
     original = scheduling.real_experiments
     ids = {row.id for row in result.values()}
-    monkeypatch.setattr(scheduling, "real_experiments", lambda: [row for row in original() if row.id in ids])
+
+    def selected(*, session=None):
+        if session is None:
+            with transaction() as owned:
+                return selected(session=owned)
+        scoped = SimpleNamespace(
+            scalars=lambda statement: session.scalars(statement.where(Experiment.id.in_(ids)))
+        )
+        return original(session=scoped)
+
+    monkeypatch.setattr(scheduling, "real_experiments", selected)
+    monkeypatch.setattr(scheduling, "STATE_ID", "test-" + uuid4().hex)
     target, _ = next_day(max(row.created_at for row in result.values()) + timedelta(days=1))
     return SimpleNamespace(experiments=result, target=target)
 
@@ -237,11 +208,14 @@ def test_startup_boundary_creates_only_valid_daily_work_and_safe_catchup(
     )
     assert all(utc(row.payload["start"]) <= case.target for row in rows if row.kind == "forecast")
     ingestions = [row for row in rows if row.kind == "ingest"]
-    assert len(ingestions) == 2 and all(
+    assert len(ingestions) == 1 and all(
         row.payload["experiment_id"] == case.experiments["usgs"].id for row in ingestions
     )
-    assert {utc(row.payload["end"]) for row in ingestions} == {timestamp}
+    assert {utc(row.payload["end"]) for row in ingestions} == {
+        timestamp.replace(minute=timestamp.minute // 15 * 15, second=0, microsecond=0)
+    }
     assert len([row for row in rows if row.kind == "evaluate"]) == 2
+    assert len([row for row in rows if row.kind == "reconcile"]) == 2
 
 
 @pytest.mark.integration
@@ -306,8 +280,9 @@ def test_concurrent_startup_and_cron_share_one_upcoming_job(owned_experiments):
     assert len({row.logical_key for row in rows}) == len(rows)
     upcoming = [row for row in rows if row.kind == "forecast" and utc(row.payload["start"]) == case.target]
     assert len(upcoming) == 2 and all(row.status == "queued" for row in upcoming)
-    assert len([row for row in rows if row.kind == "ingest"]) == 2
+    assert len([row for row in rows if row.kind == "ingest"]) == 1
     assert len([row for row in rows if row.kind == "evaluate"]) == 2
+    assert len([row for row in rows if row.kind == "reconcile"]) == 2
 
 
 @pytest.mark.integration

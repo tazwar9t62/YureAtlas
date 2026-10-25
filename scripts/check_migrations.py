@@ -470,7 +470,7 @@ def main():
             f"Seeded schema002: {sum(map(len, original.values()))} rows and {len(artifacts)} artifacts",
             flush=True,
         )
-        for target in ("003", "004", "005", "head"):
+        for target in ("003", "004", "005", "006", "head"):
             upgrade(target, env)
             assert_preserved(engine, original, artifacts, artifact_dir)
             check_defaults(engine)

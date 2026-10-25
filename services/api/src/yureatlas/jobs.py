@@ -11,11 +11,11 @@ class Cancelled(Exception):
     pass
 
 
-def enqueue(kind: str, payload: dict, key: str) -> Job:
-    return _enqueue(kind, payload, key)
+def enqueue(kind: str, payload: dict, key: str, *, session=None) -> Job:
+    return _enqueue(kind, payload, key, session=session)
 
 
-def enqueue_missed(kind: str, payload: dict, key: str, reason: str) -> Job:
+def enqueue_missed(kind: str, payload: dict, key: str, reason: str, *, session=None) -> Job:
     """Insert an absent missed decision without modifying existing work.
 
     A missed decision must never be briefly claimable as queued. The unique-key
@@ -24,32 +24,55 @@ def enqueue_missed(kind: str, payload: dict, key: str, reason: str) -> Job:
     """
     if not isinstance(reason, str) or not reason.strip():
         raise ValueError("A missed job requires a reason")
-    return _enqueue(kind, payload, key, missed_reason=reason)
+    return _enqueue(kind, payload, key, missed_reason=reason, session=session)
 
 
-def _enqueue(kind: str, payload: dict, key: str, *, missed_reason: str | None = None) -> Job:
+def _job_values(kind: str, payload: dict, key: str, *, missed_reason: str | None = None):
     timestamp = now()
-    with transaction() as s:
-        s.execute(
-            insert(Job)
-            .values(
-                id=uid(),
-                created_at=timestamp,
-                kind=kind,
-                payload=payload,
-                logical_key=key,
-                status="missed" if missed_reason is not None else "queued",
-                attempts=0,
-                progress=0,
-                cancel_requested=False,
-                result={},
-                error=missed_reason,
-                heartbeat=timestamp if missed_reason is not None else None,
-                lease_until=None,
+    return {
+        "id": uid(),
+        "created_at": timestamp,
+        "kind": kind,
+        "payload": payload,
+        "logical_key": key,
+        "status": "missed" if missed_reason is not None else "queued",
+        "attempts": 0,
+        "progress": 0,
+        "cancel_requested": False,
+        "result": {},
+        "error": missed_reason,
+        "heartbeat": timestamp if missed_reason is not None else None,
+        "lease_until": None,
+    }
+
+
+def _enqueue(kind: str, payload: dict, key: str, *, missed_reason: str | None = None, session=None) -> Job:
+    if session is None:
+        with transaction() as owned:
+            return _enqueue(kind, payload, key, missed_reason=missed_reason, session=owned)
+    session.execute(
+        insert(Job)
+        .values(**_job_values(kind, payload, key, missed_reason=missed_reason))
+        .on_conflict_do_nothing(index_elements=[Job.logical_key])
+    )
+    return session.scalar(select(Job).where(Job.logical_key == key))
+
+
+def enqueue_batch(plans: list[dict], *, session) -> list[str]:
+    """Insert bounded chunks within the caller's decision/cursor transaction."""
+    inserted = []
+    # Fourteen columns per row: comfortably below PostgreSQL's bind limit.
+    for offset in range(0, len(plans), 200):
+        values = [_job_values(**plan) for plan in plans[offset : offset + 200]]
+        inserted.extend(
+            session.scalars(
+                insert(Job)
+                .values(values)
+                .on_conflict_do_nothing(index_elements=[Job.logical_key])
+                .returning(Job.logical_key)
             )
-            .on_conflict_do_nothing(index_elements=[Job.logical_key])
         )
-        return s.scalar(select(Job).where(Job.logical_key == key))
+    return inserted
 
 
 def claim() -> Job | None:

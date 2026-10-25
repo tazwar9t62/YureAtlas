@@ -236,3 +236,14 @@ class WorkerState(Base):
     id: Mapped[str] = mapped_column(String, primary_key=True)
     heartbeat: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     details: Mapped[dict] = mapped_column(JSONB, default=dict)
+
+
+class SchedulerState(Base):
+    """Committed scheduling decisions, independent of worker liveness."""
+
+    __tablename__ = "scheduler_state"
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    reconciled_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    observed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    details: Mapped[dict] = mapped_column(JSONB, default=dict)
+    __table_args__ = (CheckConstraint("reconciled_at >= observed_at"),)

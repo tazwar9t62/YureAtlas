@@ -175,6 +175,31 @@ def execute(kind, payload, progress):
         )
 
     experiment_id = payload.get("experiment_id")
+    if kind == "reconcile":
+        if not experiment_id or not payload.get("start") or not payload.get("end"):
+            raise ValueError("Scheduled reconciliation requires an experiment and pinned interval")
+        start, end = utc(payload["start"]), utc(payload["end"])
+        if end - start != timedelta(days=31) or end > now():
+            raise ValueError("Scheduled reconciliation requires a completed 31-day interval")
+        experiment, _ = load_experiment(experiment_id)
+        if experiment.synthetic or experiment.config["provider"] not in {"usgs", "jma"}:
+            raise ValueError("Scheduled reconciliation requires a real USGS or JMA experiment")
+        progress(0)
+        ingestion = None
+        if experiment.config["provider"] == "usgs":
+            ingestion = ingest_usgs(experiment_id, start, end, lambda p: progress(0.8 * p), use_feed=False)
+        # One durable job provides actual ordering: a failed refresh cannot be
+        # followed by its evaluation merely because two queued jobs tied in time.
+        # A partial refresh may still yield explicit unavailable observations.
+        progress(0.8)
+        evaluation = execute("evaluate", {"experiment_id": experiment_id}, lambda p: progress(0.8 + 0.2 * p))
+        progress(1)
+        return {
+            "experiment_id": experiment_id,
+            "scheduled_end": end.isoformat(),
+            "ingestion": ingestion,
+            **evaluation,
+        }
     if kind == "ingest":
         experiment_id = experiment_id or real_experiment().id
         end = utc(payload["end"]) if payload.get("end") else now()
